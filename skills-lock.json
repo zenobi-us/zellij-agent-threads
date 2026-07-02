@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "zellij-plugin-dev": {
+      "source": "delorenj/skills",
+      "sourceType": "github",
+      "skillPath": "zellij-plugin-dev/SKILL.md",
+      "computedHash": "e3ed822ba22a30449d7dc63015782d1911fa1aa1de781bdd5c106e906405551c"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Build Zellij plugin wasm"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+WASM="$ROOT/target/wasm32-wasip1/release/zellij-plugin-agent-worktree-list.wasm"
+
+rustup target add wasm32-wasip1 >/dev/null 2>&1 || true
+cargo build --release --target wasm32-wasip1
+
+if [[ -n "${ZELLIJ:-}" ]]; then
+  zellij action start-or-reload-plugin "file:$WASM"
+fi

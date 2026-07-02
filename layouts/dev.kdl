@@ -1,0 +1,12 @@
+layout {
+    pane split_direction="vertical" {
+        pane edit="src/main.rs"
+        pane command="pi" 
+        pane command="bash" {
+            args "-c" "mise watch build"
+        }
+        pane {
+            plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-worktree-list.wasm"
+        }
+    }
+}
