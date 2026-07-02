@@ -1,0 +1,105 @@
+//! Builds and paints the plugin UI.
+//!
+//! Rendering has two layers on purpose: [`RenderModel`] prepares plain data that
+//! host tests can inspect, while [`Renderer`] performs the Zellij terminal calls.
+//! This keeps UX decisions testable even though Zellij drawing itself is a host
+//! side effect.
+
+mod button;
+mod filters;
+mod model;
+mod template;
+
+pub(crate) use button::is_collapse_button_click;
+pub(crate) use model::{RenderModel, DEFAULT_TEMPLATE};
+
+use zellij_tile::prelude::*;
+
+use button::{collapse_button, print_button};
+use template::render_template;
+
+/// Paints a [`RenderModel`] into the Zellij plugin pane.
+///
+/// This type intentionally contains no runtime knowledge. If a future change can
+/// be tested by checking [`RenderModel`], keep it out of this painter.
+pub(crate) struct Renderer;
+
+impl Renderer {
+    /// Clears the pane and paints visible rows for the current terminal size.
+    ///
+    /// `rows` and `cols` come from Zellij, so zero-sized panes are valid during
+    /// layout churn and should render nothing rather than panic.
+    pub(crate) fn render(model: &RenderModel, rows: usize, cols: usize) {
+        clear_screen();
+
+        if rows == 0 || cols == 0 {
+            return;
+        }
+
+        let button = collapse_button(model.collapsed);
+        let rendered =
+            render_template(model).unwrap_or_else(|error| format!("template error: {}", error));
+
+        for (row, line) in rendered.lines().take(rows).enumerate() {
+            let line_cols = if row == 0 {
+                cols.saturating_sub(button.len() + 1)
+            } else {
+                cols
+            };
+            print_line(row, line_cols, line);
+        }
+        print_button(0, cols, button);
+    }
+}
+
+/// Paints one clipped line at column zero.
+fn print_line(row: usize, cols: usize, line: &str) {
+    print_text_with_coordinates(Text::new(truncate(line, cols)), 0, row, Some(cols), Some(1));
+}
+
+/// Truncates by characters so UTF-8 input is never sliced mid-codepoint.
+fn truncate(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::RenderConfig;
+    use crate::runtime::{AgentSession, AgentState, RuntimeState};
+    use std::collections::{BTreeMap, VecDeque};
+
+    #[test]
+    fn renders_template_with_project_and_remap_filter() {
+        let runtime = RuntimeState {
+            sessions: BTreeMap::from([(
+                "s".into(),
+                AgentSession {
+                    version: 1,
+                    session: "s".into(),
+                    cwd: "/tmp/project".into(),
+                    pane_id: Some("1".into()),
+                    tab_id: Some(7),
+                    tab_name: Some("Agents".into()),
+                    zellij_session: Some("z".into()),
+                    state: AgentState::Running,
+                    model: Some("m".into()),
+                    updated_at: 0,
+                },
+            )]),
+            events: VecDeque::from(["old".into(), "new".into()]),
+            pipe_count: 2,
+            last_error: None,
+            collapsed: false,
+            last_cols: 0,
+        };
+
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        assert!(render_template(&model).unwrap().contains("project"));
+
+        let mut remap_config = RenderConfig::default();
+        remap_config.template = "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into();
+        let remap_model = RenderModel::from_runtime(&runtime, &remap_config);
+        assert_eq!(render_template(&remap_model).unwrap(), "RUN");
+    }
+}
