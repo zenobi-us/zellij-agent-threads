@@ -51,6 +51,7 @@ export default defineConfig({
     git: {
       repo: "zellij-agent-threads",
       user: "zenobi-us",
+      branch: "main",
     },
   },
   meta: {
