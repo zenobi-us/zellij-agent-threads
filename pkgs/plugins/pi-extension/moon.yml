@@ -28,7 +28,7 @@ tasks:
   test:
     command: "bun test"
 
-  install-local:
+  dev:
     script: |
       set -euo pipefail
       mkdir -p "$HOME/.pi/agent/extensions"

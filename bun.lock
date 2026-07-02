@@ -37,7 +37,7 @@
         "vite": "^8.0.16",
       },
     },
-    "pkgs/plugins/pi-extension-zellij-threads": {
+    "pkgs/plugins/pi-extension": {
       "name": "@zellij-agent-threads/pi-extension",
       "version": "0.0.1",
       "devDependencies": {
@@ -540,7 +540,7 @@
 
     "@zellij-agent-threads/docs": ["@zellij-agent-threads/docs@workspace:apps/docs"],
 
-    "@zellij-agent-threads/pi-extension": ["@zellij-agent-threads/pi-extension@workspace:pkgs/plugins/pi-extension-zellij-threads"],
+    "@zellij-agent-threads/pi-extension": ["@zellij-agent-threads/pi-extension@workspace:pkgs/plugins/pi-extension"],
 
     "acorn": ["acorn@8.17.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg=="],
 

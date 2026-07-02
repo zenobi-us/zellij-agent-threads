@@ -3,10 +3,9 @@ import { spawn } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
-const PIPE_NAME = "pi-agent-session";
+const PIPE_NAME = "zellij-agent-threads";
 const STATUS_KEY = "zellij-agent";
 const LOG_FILE = `${tmpdir()}/pi-zellij-agent-${process.getuid?.() ?? "user"}.log`;
-const PLUGIN_URL = process.env.ZELLIJ_AGENT_PLUGIN_URL ?? "file:pkgs/plugins/zellij-plugin-agent-threads/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm";
 
 type AgentState = "idle" | "running" | "shutdown";
 
@@ -38,7 +37,7 @@ export default function (pi: ExtensionAPI) {
 
   function pipeToPlugin(payload: string) {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("zellij", ["pipe", "--plugin", PLUGIN_URL, "--name", PIPE_NAME, "--", payload], {
+      const child = spawn("zellij", ["pipe", "--name", PIPE_NAME, "--", payload], {
         stdio: "ignore",
       });
 
