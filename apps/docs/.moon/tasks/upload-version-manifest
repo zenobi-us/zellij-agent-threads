@@ -4,7 +4,7 @@ set -euo pipefail
 log() { printf '\033[36m[docs:versions]\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[31m[docs:versions:fail]\033[0m %s\n' "$*" >&2; exit 1; }
 
-repo_name="boxfiles.github.io"
+repo_name="zellij-agent-threads.github.io"
 branch="main"
 src="${MOON_PROJECT_ROOT}/public/releases.json"
 tmp="$(mktemp -d)"
@@ -52,7 +52,7 @@ if git ls-remote "${clone_url}" >/dev/null 2>&1; then
   log "target repo exists: ${repo}"
 elif [ -n "${token}" ]; then
   log "target repo missing; creating ${repo}"
-  gh repo create "${repo}" --public --description "Boxfiles documentation site"
+  gh repo create "${repo}" --public --description "Zellij Agent Threads documentation site"
 else
   fail "target repo missing or inaccessible: ${repo}"
 fi

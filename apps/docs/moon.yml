@@ -32,7 +32,7 @@ tasks:
     inputs:
       - "/.release-please-manifest.json"
       - "/apps/*/package.json"
-      - "/pkgs/*/package.json"
+      - "/pkgs/**/package.json"
     outputs:
       - "public/releases.json"
 
@@ -76,4 +76,4 @@ tasks:
     dependsOn: ["build"]
     options:
       cache: false
-    command: "bash .moon/tasks/publish"
+    command: "${MOON_WORKSPACE_ROOT}/pkgs/tools/deployment/deploy-github-pages --source ${MOON_PROJECT_ROOT}/dist/public --repo zellij-agent-threads.github.io --description 'Zellij Agent Threads documentation site'"

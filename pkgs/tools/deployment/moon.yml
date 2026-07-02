@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../../.moon/cache/schemas/project.json
+language: bash
+layer: tool
+
+project:
+  name: deployment
+
+tasks:
+  test:
+    command: "bash -n deploy-github-pages"
+    inputs:
+      - "deploy-github-pages"
