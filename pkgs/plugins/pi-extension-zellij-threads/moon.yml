@@ -1,5 +1,5 @@
 ---
-$schema: "file://../../.moon/cache/schemas/project.json"
+$schema: "file://../../../.moon/cache/schemas/project.json"
 
 language: typescript
 layer: library

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 const PIPE_NAME = "pi-agent-session";
 const STATUS_KEY = "zellij-agent";
 const LOG_FILE = `${tmpdir()}/pi-zellij-agent-${process.getuid?.() ?? "user"}.log`;
-const PLUGIN_URL = process.env.ZELLIJ_AGENT_PLUGIN_URL ?? "file:pkgs/zellij-plugin-agent-threads/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm";
+const PLUGIN_URL = process.env.ZELLIJ_AGENT_PLUGIN_URL ?? "file:pkgs/plugins/zellij-plugin-agent-threads/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm";
 
 type AgentState = "idle" | "running" | "shutdown";
 

@@ -11,7 +11,7 @@ moon run zellij-plugin-agent-threads:build
 Output:
 
 ```text
-pkgs/zellij-plugin-agent-threads/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm
+pkgs/plugins/zellij-plugin-agent-threads/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm
 ```
 
 ## Test

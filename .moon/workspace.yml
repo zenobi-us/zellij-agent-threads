@@ -4,7 +4,8 @@ projects:
     repo: "./"
   globs:
     - "apps/*"
-    - "pkgs/*"
+    - "pkgs/plugins/*"
+    - "pkgs/tools/*"
 
 vcs:
   defaultBranch: "master"

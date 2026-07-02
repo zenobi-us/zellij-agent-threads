@@ -11,6 +11,7 @@
   },
   "workspaces": [
     "apps/*",
-    "pkgs/*"
+    "pkgs/plugins/*",
+    "pkgs/tools/*"
   ]
 }

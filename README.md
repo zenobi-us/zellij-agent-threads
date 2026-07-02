@@ -4,8 +4,8 @@ Moon + proto monorepo for the Zellij agent thread plugin and Pi extension.
 
 ## Projects
 
-- `pkgs/zellij-plugin-agent-threads` — Rust/WASM Zellij plugin.
-- `pkgs/pi-extension-zellij-threads` — Pi extension that publishes session state through Zellij pipes.
+- `pkgs/plugins/zellij-plugin-agent-threads` — Rust/WASM Zellij plugin.
+- `pkgs/plugins/pi-extension-zellij-threads` — Pi extension that publishes session state through Zellij pipes.
 - `apps/docs` — docs app copied from `boxfiles/boxfiles` as the monorepo docs scaffold.
 
 ## Setup

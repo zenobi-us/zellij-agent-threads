@@ -4,8 +4,8 @@
 
 `zellij-agent-threads` is a Moon + proto monorepo for:
 
-- `pkgs/zellij-plugin-agent-threads`: Rust/WASM Zellij plugin that renders Pi agent session reports.
-- `pkgs/pi-extension-zellij-threads`: Pi extension that publishes session state to the Zellij plugin.
+- `pkgs/plugins/zellij-plugin-agent-threads`: Rust/WASM Zellij plugin that renders Pi agent session reports.
+- `pkgs/plugins/pi-extension-zellij-threads`: Pi extension that publishes session state to the Zellij plugin.
 - `apps/docs`: docs scaffold copied from `boxfiles/boxfiles`.
 
 Also read nested `AGENTS.md` files in apps/pkgs.

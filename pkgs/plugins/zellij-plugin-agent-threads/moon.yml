@@ -1,5 +1,5 @@
 ---
-$schema: "file://../../.moon/cache/schemas/project.json"
+$schema: "file://../../../.moon/cache/schemas/project.json"
 
 language: rust
 layer: library
@@ -48,3 +48,5 @@ tasks:
     command: "zellij --layout layouts/dev.kdl"
     options:
       runInCI: false
+
+  #TODO: add a publish task here that builds the wasm and uploads it to the release
