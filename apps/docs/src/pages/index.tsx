@@ -2,11 +2,11 @@ import "../app.css";
 import { CtaHero } from "../components/CtaHero";
 import { HeroAction } from "../components/HeroAction";
 import { HeroActions } from "../components/HeroActions";
-import { PlanPreview } from "../components/PlanPreview";
 import { Site } from "../components/Site";
 import { Section } from "../components/Section";
 import { Logo } from "../components/Logo";
 import { ReleaseVersion } from "../components/ReleaseVersion";
+import { ZellijTerminalPreview } from "../components/ZellijTerminalPreview";
 
 export default function Page() {
   return (
@@ -37,7 +37,7 @@ export default function Page() {
             </HeroAction>
           </HeroActions>
         </CtaHero>
-        <PlanPreview />
+        <ZellijTerminalPreview />
       </Section>
     </Site>
   );
