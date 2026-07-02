@@ -3,7 +3,7 @@
 ```text
 Pi extension lifecycle event
   -> JSON payload
-  -> zellij pipe --name pi-agent-session
+  -> zellij pipe --name zellij-agent-threads
   -> Rust Zellij plugin pipe handler
   -> in-memory session map
   -> Zellij render
@@ -11,8 +11,8 @@ Pi extension lifecycle event
 
 ## Project map
 
-- `pkgs/plugins/pi-extension-zellij-threads/pi-zellij-agent.ts`: Pi event publisher.
-- `pkgs/plugins/zellij-plugin-agent-threads/src/main.rs`: Zellij plugin state, pipe parsing, rendering, pane cleanup.
-- `pkgs/plugins/zellij-plugin-agent-threads/layouts/dev.kdl`: local Zellij dev layout.
+- `pkgs/plugins/pi-extension/pi-zellij-agent.ts`: Pi event publisher.
+- `pkgs/plugins/zellij-plugin/src/main.rs`: Zellij plugin state, pipe parsing, rendering, pane cleanup.
+- `pkgs/plugins/zellij-plugin/moon.yml`: build/dev task that starts or reloads one plugin instance.
 - `apps/docs`: copied docs scaffold.
 - `.moon/*`, `.prototools`, `proto/plugins/*`: boxfiles-style Moon/proto workspace.

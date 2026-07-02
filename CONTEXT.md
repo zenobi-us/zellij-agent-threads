@@ -4,7 +4,7 @@ This repository is a Moon + proto monorepo for Zellij/Pi agent thread integratio
 
 ## Components
 
-- Rust Zellij plugin receives `zellij pipe` JSON messages named `pi-agent-session` and renders active sessions.
+- Rust Zellij plugin receives `zellij pipe` JSON messages named `zellij-agent-threads` and renders active sessions.
 - Pi extension publishes lifecycle events (`session_start`, `agent_start`, `agent_end`, `model_select`, `session_shutdown`) to the plugin.
 - Docs app is copied from `boxfiles/boxfiles` as a ready Moon/Bun/Waku documentation scaffold.
 

@@ -45,8 +45,32 @@ tasks:
   dev:
     deps:
       - "~:build"
-    command: "zellij --layout layouts/dev.kdl"
+      - "pi-extension:dev"
+    inputs:
+      - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+    script: |
+      set -euo pipefail
+      plugin_path="$HOME/.config/zellij/plugins/zellij-plugin-agent-threads.wasm"
+
+      mkdir -p "$(dirname "$plugin_path")"
+      ln -sfn "$PWD/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm" "$plugin_path"
+
+      zellij action start-or-reload-plugin "file:$plugin_path"
     options:
+      runInCI: false
+
+  dev-watch:
+    script: |
+      set -euo pipefail
+      watchexec \
+        --restart \
+        --watch Cargo.toml \
+        --watch .cargo/config.toml \
+        --watch src \
+        --exts rs,toml \
+        -- moon run zellij-plugin:dev --force
+    options:
+      persistent: true
       runInCI: false
 
   #TODO: add a publish task here that builds the wasm and uploads it to the release
