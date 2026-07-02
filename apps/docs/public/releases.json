@@ -1,111 +1,21 @@
 {
-  "generatedAt": "2026-06-25T02:50:54.351Z",
+  "generatedAt": "2026-07-02T07:15:44.123Z",
   "repository": "boxfiles/boxfiles",
-  "ref": "main",
-  "sha": "14716095f00476658f535a3d40780f5a4f4b4855",
+  "ref": "master",
+  "sha": "6405027735657cae3e7c1e0600c00556e5528519",
   "channel": null,
   "packages": [
     {
-      "path": "apps/cli",
-      "name": "@boxfiles/cli",
+      "path": "apps/docs",
+      "name": "@zellij-agent-threads/docs",
       "version": "0.0.1",
-      "sha": "14716095f00476658f535a3d40780f5a4f4b4855"
+      "sha": "6405027735657cae3e7c1e0600c00556e5528519"
     },
     {
-      "path": "pkgs/config",
-      "name": "@boxfiles/config",
+      "path": "pkgs/plugins/pi-extension-zellij-threads",
+      "name": "@zellij-agent-threads/pi-extension",
       "version": "0.0.1",
-      "sha": "871c3a8c975ac3d25632cdb92cabf3281d059731"
-    },
-    {
-      "path": "pkgs/core",
-      "name": "@boxfiles/core",
-      "version": "0.0.1",
-      "sha": "27709b4c754c0e4cabdaeb63bb4850d39659f5c0"
-    },
-    {
-      "path": "pkgs/diagnostics",
-      "name": "@boxfiles/diagnostics",
-      "version": "0.0.1",
-      "sha": "ca953c7e4df1cd5ad762c1424563eef951002863"
-    },
-    {
-      "path": "pkgs/plugin",
-      "name": "@boxfiles/plugin",
-      "version": "0.0.1",
-      "sha": "27709b4c754c0e4cabdaeb63bb4850d39659f5c0"
-    },
-    {
-      "path": "pkgs/provider-copy",
-      "name": "@boxfiles/provider-copy",
-      "version": "0.0.1",
-      "sha": "1d54e47538c6c493f27134409a82f02c07229b10"
-    },
-    {
-      "path": "pkgs/provider-gpu",
-      "name": "@boxfiles/provider-gpu",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-link",
-      "name": "@boxfiles/provider-link",
-      "version": "0.0.1",
-      "sha": "1d54e47538c6c493f27134409a82f02c07229b10"
-    },
-    {
-      "path": "pkgs/provider-network",
-      "name": "@boxfiles/provider-network",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-os",
-      "name": "@boxfiles/provider-os",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-ownership",
-      "name": "@boxfiles/provider-ownership",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-packages",
-      "name": "@boxfiles/provider-packages",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-permissions",
-      "name": "@boxfiles/provider-permissions",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-remove",
-      "name": "@boxfiles/provider-remove",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-rename",
-      "name": "@boxfiles/provider-rename",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
-    },
-    {
-      "path": "pkgs/provider-run",
-      "name": "@boxfiles/provider-run",
-      "version": "0.0.1",
-      "sha": "1d54e47538c6c493f27134409a82f02c07229b10"
-    },
-    {
-      "path": "pkgs/provider-user",
-      "name": "@boxfiles/provider-user",
-      "version": "0.0.1",
-      "sha": "7b7f2db432a31350b4dbbd50bff85589f94a1f07"
+      "sha": "6405027735657cae3e7c1e0600c00556e5528519"
     }
   ]
 }

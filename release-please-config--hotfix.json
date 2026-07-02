@@ -1,75 +1,16 @@
 {
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "separate-pull-requests": false,
   "versioning": "always-bump-patch",
   "bump-patch-for-minor-pre-major": true,
   "release-type": "node",
   "packages": {
-    "apps/cli": {
+    "apps/docs": {
       "group": "application",
       "release-type": "node"
     },
-    "pkgs/config": {
-      "group": "library",
-      "release-type": "node"
-    },
-    "pkgs/core": {
-      "group": "library",
-      "release-type": "node"
-    },
-    "pkgs/diagnostics": {
-      "group": "library",
-      "release-type": "node"
-    },
-    "pkgs/plugin": {
-      "group": "library",
-      "release-type": "node"
-    },
-    "pkgs/provider-copy": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-gpu": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-link": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-network": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-os": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-ownership": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-packages": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-permissions": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-remove": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-rename": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-run": {
-      "group": "provider",
-      "release-type": "node"
-    },
-    "pkgs/provider-user": {
-      "group": "provider",
+    "pkgs/plugins/pi-extension-zellij-threads": {
+      "group": "plugin",
       "release-type": "node"
     }
   },
@@ -77,6 +18,5 @@
     {
       "type": "node-workspace"
     }
-  ],
-  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
+  ]
 }
