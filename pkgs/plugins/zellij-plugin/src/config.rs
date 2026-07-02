@@ -52,6 +52,7 @@ impl PluginConfig {
 pub(crate) struct RenderConfig {
     pub(crate) title: String,
     pub(crate) empty_message: String,
+    pub(crate) template: String,
 }
 
 impl Default for RenderConfig {
@@ -60,6 +61,7 @@ impl Default for RenderConfig {
         Self {
             title: "zellij-agent".into(),
             empty_message: "waiting for pi extension reports".into(),
+            template: crate::render::DEFAULT_TEMPLATE.into(),
         }
     }
 }
@@ -78,6 +80,10 @@ impl RenderConfig {
                 .get("empty_message")
                 .cloned()
                 .unwrap_or(default.empty_message),
+            template: configuration
+                .get("template")
+                .cloned()
+                .unwrap_or(default.template),
         }
     }
 }
@@ -100,10 +106,12 @@ mod tests {
             ("title".into(), "agents".into()),
             ("empty_message".into(), "none".into()),
             ("resize_steps".into(), "3".into()),
+            ("template".into(), "{{ status }}".into()),
         ]));
 
         assert_eq!(config.render.title, "agents");
         assert_eq!(config.render.empty_message, "none");
+        assert_eq!(config.render.template, "{{ status }}");
         assert_eq!(config.resize_steps, 3);
     }
 

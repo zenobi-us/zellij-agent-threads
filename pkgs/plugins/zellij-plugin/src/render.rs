@@ -5,30 +5,56 @@
 //! This keeps UX decisions testable even though Zellij drawing itself is a host
 //! side effect.
 
+use std::collections::BTreeMap;
+use minijinja::Environment;
+use serde::Serialize;
+
 use zellij_tile::prelude::*;
 
 use crate::config::RenderConfig;
 use crate::runtime::{basename, state_label, RuntimeState};
+
+pub(crate) const DEFAULT_TEMPLATE: &str = r#"
+{% if sessions | length == 0 -%}
+  0 Agents
+{% else -%}
+{% for group in groups %}
+{{ group.tab_name }} (#{{ group.tab_id }})
+{% for session in group.sessions -%}
+  {{ session.pane }} {{ session.state }} {{ session.model }} {{ session.cwd }}
+{% endfor -%}
+
+{% endfor %}
+{% endif -%}
+"#;
 
 /// Render-ready snapshot of runtime state.
 ///
 /// This is the seam between plugin state and terminal drawing. It hides storage
 /// details like `BTreeMap`/`VecDeque` from [`Renderer`] and from future template
 /// rendering code.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct RenderModel {
     pub(crate) collapsed: bool,
-    status: String,
     empty_message: String,
     sessions: Vec<SessionLine>,
+    groups: Vec<TabGroup>,
     events: Vec<String>,
+    template: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct TabGroup {
+    tab_id: String,
+    tab_name: String,
+    sessions: Vec<SessionLine>,
 }
 
 /// One display row for a Pi agent session.
 ///
 /// Values are already formatted for compact terminal output so the painter does
 /// not need to know about agent payload fields.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct SessionLine {
     state: &'static str,
     pane: String,
@@ -43,22 +69,7 @@ impl RenderModel {
     /// text, and path compaction. Keeping those choices here lets future template
     /// support consume the same model instead of raw plugin state.
     pub(crate) fn from_runtime(state: &RuntimeState, config: &RenderConfig) -> Self {
-        let status = if let Some(error) = &state.last_error {
-            format!(
-                "{} pipes={} collapsed={} error={}",
-                config.title, state.pipe_count, state.collapsed, error
-            )
-        } else {
-            format!(
-                "{} pipes={} sessions={} collapsed={}",
-                config.title,
-                state.pipe_count,
-                state.sessions.len(),
-                state.collapsed
-            )
-        };
-
-        let sessions = state
+        let sessions: Vec<_> = state
             .sessions
             .values()
             .map(|session| SessionLine {
@@ -69,12 +80,34 @@ impl RenderModel {
             })
             .collect();
 
+        let mut groups = BTreeMap::<String, TabGroup>::new();
+        for session in state.sessions.values() {
+            let tab_id = session.tab_id.map(|id| id.to_string()).unwrap_or_else(|| "?".into());
+            let tab_name = session.tab_name.clone().unwrap_or_else(|| "unknown tab".into());
+            let key = format!("{tab_id}\0{tab_name}");
+            groups
+                .entry(key)
+                .or_insert_with(|| TabGroup {
+                    tab_id,
+                    tab_name,
+                    sessions: Vec::new(),
+                })
+                .sessions
+                .push(SessionLine {
+                    state: state_label(&session.state),
+                    pane: session.pane_id.clone().unwrap_or_else(|| "?".into()),
+                    cwd: basename(&session.cwd).into(),
+                    model: session.model.clone().unwrap_or_else(|| "?".into()),
+                });
+        }
+
         Self {
             collapsed: state.collapsed,
-            status,
             empty_message: config.empty_message.clone(),
             sessions,
+            groups: groups.into_values().collect(),
             events: state.events.iter().rev().cloned().collect(),
+            template: config.template.clone(),
         }
     }
 }
@@ -98,50 +131,32 @@ impl Renderer {
         }
 
         let button = collapse_button(model.collapsed);
-        print_line(0, cols.saturating_sub(button.len() + 1), &model.status);
+        let rendered =
+            render_template(model).unwrap_or_else(|error| format!("template error: {}", error));
+
+        for (row, line) in rendered.lines().take(rows).enumerate() {
+            let line_cols = if row == 0 {
+                cols.saturating_sub(button.len() + 1)
+            } else {
+                cols
+            };
+            print_line(row, line_cols, line);
+        }
         print_button(0, cols, button);
-
-        if rows <= 1 || model.collapsed {
-            return;
-        }
-
-        if model.sessions.is_empty() {
-            print_line(1, cols, &model.empty_message);
-        } else {
-            for (row, session) in model.sessions.iter().take(rows - 1).enumerate() {
-                print_line(row + 1, cols, &session.to_line());
-            }
-        }
-
-        let first_event_row = if model.sessions.is_empty() {
-            2
-        } else {
-            model.sessions.len() + 1
-        };
-        for (offset, event) in model
-            .events
-            .iter()
-            .take(rows.saturating_sub(first_event_row))
-            .enumerate()
-        {
-            print_line(first_event_row + offset, cols, event);
-        }
     }
 }
 
-impl SessionLine {
-    /// Formats one session row using the compact default layout.
-    fn to_line(&self) -> String {
-        format!(
-            "{} pane={} {} {}",
-            self.state, self.pane, self.cwd, self.model
-        )
-    }
+fn render_template(model: &RenderModel) -> Result<String, minijinja::Error> {
+    Environment::new().render_str(&model.template, model)
 }
 
 /// Returns the clickable collapse/expand label.
 pub(crate) fn collapse_button(collapsed: bool) -> &'static str {
-    if collapsed { "[+]" } else { "[-]" }
+    if collapsed {
+        "[+]"
+    } else {
+        "[-]"
+    }
 }
 
 /// Computes the first column occupied by the collapse button.
@@ -153,7 +168,12 @@ fn collapse_button_start_col(cols: usize, collapsed: bool) -> usize {
 ///
 /// Zellij mouse rows are signed while columns are unsigned in this API version;
 /// keeping the conversion out of `main.rs` avoids callback clutter.
-pub(crate) fn is_collapse_button_click(row: isize, col: usize, cols: usize, collapsed: bool) -> bool {
+pub(crate) fn is_collapse_button_click(
+    row: isize,
+    col: usize,
+    cols: usize,
+    collapsed: bool,
+) -> bool {
     row == 0 && col >= collapse_button_start_col(cols, collapsed)
 }
 
@@ -194,6 +214,9 @@ mod tests {
                     session: "s".into(),
                     cwd: "/tmp/project".into(),
                     pane_id: Some("1".into()),
+                    tab_id: Some(7),
+                    tab_name: Some("Agents".into()),
+                    zellij_session: Some("z".into()),
                     state: AgentState::Running,
                     model: Some("m".into()),
                     updated_at: 0,
@@ -208,8 +231,8 @@ mod tests {
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
 
-        assert_eq!(model.status, "zellij-agent pipes=2 sessions=1 collapsed=false");
-        assert_eq!(model.sessions[0].to_line(), "running pane=1 project m");
+        assert_eq!(model.sessions.len(), 1);
         assert_eq!(model.events, vec!["new", "old"]);
+        assert!(render_template(&model).unwrap().contains("project"));
     }
 }

@@ -9,3 +9,4 @@ license = "MIT"
 zellij-tile = "=0.44.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+minijinja = "2.21"

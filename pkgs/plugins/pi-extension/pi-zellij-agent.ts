@@ -8,6 +8,12 @@ const STATUS_KEY = "zellij-agent";
 const LOG_FILE = `${tmpdir()}/pi-zellij-agent-${process.getuid?.() ?? "user"}.log`;
 
 type AgentState = "idle" | "running" | "shutdown";
+type PaneTabInfo = {
+  id?: number;
+  is_plugin?: boolean;
+  tab_id?: number;
+  tab_name?: string;
+};
 
 export default function (pi: ExtensionAPI) {
   let state: AgentState = "idle";
@@ -26,12 +32,12 @@ export default function (pi: ExtensionAPI) {
 
   function updateUi(ctx: ExtensionContext, status: string) {
     lastStatus = status;
-    if (!ctx.hasUI) return;
     try {
+      if (!ctx.hasUI) return;
       ctx.ui.setStatus(STATUS_KEY, `zellij ${status}`);
       ctx.ui.setWidget(STATUS_KEY, undefined);
     } catch {
-      // UI should never break pi startup.
+      // ponytail: ctx can go stale after session replacement; Zellij publish must not crash Pi.
     }
   }
 
@@ -49,17 +55,43 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  function paneTabInfo(paneId = process.env.ZELLIJ_PANE_ID) {
+    return new Promise<PaneTabInfo | undefined>((resolve) => {
+      const child = spawn("zellij", ["action", "list-panes", "--json"], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      let stdout = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.on("error", () => resolve(undefined));
+      child.on("exit", (code) => {
+        if (code !== 0) return resolve(undefined);
+        try {
+          const panes = JSON.parse(stdout) as PaneTabInfo[];
+          const ownPane = panes.find((pane) => !pane.is_plugin && String(pane.id) === paneId);
+          resolve(ownPane);
+        } catch {
+          resolve(undefined);
+        }
+      });
+    });
+  }
+
   async function publish(ctx: ExtensionContext, nextState = state) {
     try {
       state = nextState;
       publishCount += 1;
       updateUi(ctx, "publishing");
+      const tab = await paneTabInfo();
 
       const payload = JSON.stringify({
         version: 1,
         session: ctx.sessionManager.getSessionFile() ?? `${ctx.cwd}:${process.pid}`,
         cwd: ctx.cwd,
+        zellij_session: process.env.ZELLIJ_SESSION_NAME,
         pane_id: process.env.ZELLIJ_PANE_ID,
+        tab_id: tab?.tab_id,
+        tab_name: tab?.tab_name,
         state,
         model: ctx.model?.id,
         updated_at: Date.now(),
