@@ -1,0 +1,33 @@
+name = "worktrunk"
+type = "cli"
+
+[platform.linux]
+download-file = "worktrunk-{arch}-unknown-linux-musl.tar.xz"
+checksum-file = "worktrunk-{arch}-unknown-linux-musl.tar.xz.sha256"
+archive-prefix = "worktrunk-{arch}-unknown-linux-musl"
+
+[platform.macos]
+download-file = "worktrunk-{arch}-apple-darwin.tar.xz"
+checksum-file = "worktrunk-{arch}-apple-darwin.tar.xz.sha256"
+archive-prefix = "worktrunk-{arch}-apple-darwin"
+
+[platform.windows]
+download-file = "worktrunk-{arch}-pc-windows-msvc.zip"
+checksum-file = "worktrunk-{arch}-pc-windows-msvc.zip.sha256"
+exe-path = "wt.exe"
+archs = ["x64"]
+
+[install]
+download-url = "https://github.com/max-sixty/worktrunk/releases/download/v{version}/{download_file}"
+checksum-url = "https://github.com/max-sixty/worktrunk/releases/download/v{version}/{checksum_file}"
+
+[install.arch]
+x86_64 = "x86_64"
+aarch64 = "aarch64"
+
+[install.exes.wt]
+exe-path = "wt"
+primary = true
+[resolve]
+git-url = "https://github.com/max-sixty/worktrunk"
+version-pattern = "^v(?<version>.*)$"

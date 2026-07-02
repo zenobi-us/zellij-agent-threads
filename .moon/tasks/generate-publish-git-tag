@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+publish_tag="${1:-}"
+pkg_path="${2:-}"
+
+if [ -z "${publish_tag}" ] || [ -z "${pkg_path}" ]; then
+  echo "ERROR: usage: $0 <latest|next> <pkg_path>" >&2
+  exit 1
+fi
+
+case "${publish_tag}" in
+  latest|next)
+    ;;
+  *)
+    echo "ERROR: unsupported publish_tag='${publish_tag}' (expected: latest or next)." >&2
+    exit 1
+    ;;
+esac
+
+pkg_dir="$(cd "${pkg_path}" && pwd -P)"
+pkg_json="${pkg_dir}/package.json"
+
+if [ ! -f "${pkg_json}" ]; then
+  echo "ERROR: package.json not found at '${pkg_json}'." >&2
+  exit 1
+fi
+
+workspace_root="${MOON_WORKSPACE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+workspace_root="$(cd "${workspace_root}" && pwd -P)"
+
+pkg_rel="${pkg_dir}"
+if [[ "${pkg_dir}" == "${workspace_root}" ]]; then
+  pkg_rel=""
+elif [[ "${pkg_dir}" == "${workspace_root}/"* ]]; then
+  pkg_rel="${pkg_dir#"${workspace_root}/"}"
+fi
+
+readarray -t pkg_fields < <(node -e '
+  const fs = require("node:fs");
+  const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  console.log(pkg.name ?? "");
+  console.log(pkg.version ?? "");
+' "${pkg_json}")
+
+pkg_name="${pkg_fields[0]}"
+current_version="${pkg_fields[1]}"
+
+if [ -z "${current_version}" ]; then
+  echo "ERROR: package version missing in '${pkg_json}'." >&2
+  exit 1
+fi
+
+publish_version="${current_version}"
+if [ "${publish_tag}" = "next" ]; then
+  build_number="$(git rev-list HEAD --count)"
+  base_version="${current_version%%-*}"
+  publish_version="${base_version}-next.${build_number}"
+fi
+
+if [ -n "${pkg_rel}" ]; then
+  tag_base="${pkg_rel}"
+else
+  tag_base="${pkg_name#@}"
+  tag_base="${tag_base//\//-}"
+fi
+
+if [ -z "${tag_base}" ]; then
+  echo "ERROR: unable to derive git tag base for '${pkg_json}'." >&2
+  exit 1
+fi
+
+git_tag="${tag_base}-v${publish_version}"
+
+printf 'PUBLISH_CURRENT_VERSION=%q\n' "${current_version}"
+printf 'PUBLISH_VERSION=%q\n' "${publish_version}"
+printf 'PUBLISH_GIT_TAG=%q\n' "${git_tag}"

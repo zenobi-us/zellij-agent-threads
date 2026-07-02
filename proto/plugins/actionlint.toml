@@ -1,0 +1,32 @@
+name = "actionlint"
+type = "cli"
+
+[platform.linux]
+download-file = "actionlint_{version}_linux_{arch}.tar.gz"
+checksum-file = "actionlint_{version}_checksums.txt"
+
+[platform.macos]
+download-file = "actionlint_{version}_darwin_{arch}.tar.gz"
+checksum-file = "actionlint_{version}_checksums.txt"
+
+[platform.windows]
+download-file = "actionlint_{version}_windows_{arch}.zip"
+checksum-file = "actionlint_{version}_checksums.txt"
+exe-path = "actionlint.exe"
+
+[install]
+download-url = "https://github.com/rhysd/actionlint/releases/download/v{version}/{download_file}"
+checksum-url = "https://github.com/rhysd/actionlint/releases/download/v{version}/{checksum_file}"
+
+[install.arch]
+x86 = "386"
+x86_64 = "amd64"
+aarch64 = "arm64"
+arm = "armv6"
+
+[install.exes.actionlint]
+exe-path = "actionlint"
+primary = true
+
+[resolve]
+git-url = "https://github.com/rhysd/actionlint"

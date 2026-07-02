@@ -1,0 +1,21 @@
+name = "bats"
+type = "cli"
+
+[platform.linux]
+download-file = "v{version}.tar.gz"
+archive-prefix = "bats-core-{version}"
+
+[platform.macos]
+download-file = "v{version}.tar.gz"
+archive-prefix = "bats-core-{version}"
+
+[install]
+download-url = "https://github.com/bats-core/bats-core/archive/refs/tags/{download_file}"
+
+[install.exes.bats]
+exe-path = "bin/bats"
+primary = true
+
+[resolve]
+git-url = "https://github.com/bats-core/bats-core"
+version-pattern = "^v(?<version>.*)$"

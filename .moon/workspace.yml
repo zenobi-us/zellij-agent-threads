@@ -1,0 +1,11 @@
+---
+projects:
+  sources:
+    repo: "./"
+  globs:
+    - "apps/*"
+    - "pkgs/*"
+
+vcs:
+  defaultBranch: "master"
+  provider: "github"

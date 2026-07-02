@@ -1,0 +1,22 @@
+name = "usage"
+type = "cli"
+
+[platform.linux]
+download-file = "usage-{arch}-unknown-linux-gnu.tar.gz"
+
+[platform.macos]
+download-file = "usage-universal-apple-darwin.tar.gz"
+
+[platform.windows]
+download-file = "usage-{arch}-pc-windows-msvc.zip"
+exe-path = "usage.exe"
+
+[install]
+download-url = "https://github.com/jdx/usage/releases/download/v{version}/{download_file}"
+
+[install.exes.usage]
+exe-path = "usage"
+primary = true
+
+[resolve]
+git-url = "https://github.com/jdx/usage"

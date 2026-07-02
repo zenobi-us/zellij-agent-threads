@@ -1,0 +1,11 @@
+---
+$schema: "file://./cache/schemas/toolchain.json"
+
+javascript:
+  packageManager: "bun"
+
+bun:
+  version: "1.3.14"
+
+rust:
+  version: "stable"

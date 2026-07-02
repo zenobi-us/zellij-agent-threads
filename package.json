@@ -1,8 +1,16 @@
 {
-  "dependencies": {},
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.3",
-    "@types/node": "^26.0.1",
-    "typescript": "^6.0.3"
-  }
+  "name": "zellij-agent-threads",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@moonrepo/cli": "*",
+    "@playwright/cli": "^0.1.14",
+    "@types/bun": "^1.3.14",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "workspaces": [
+    "apps/*",
+    "pkgs/*"
+  ]
 }

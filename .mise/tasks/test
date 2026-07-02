@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Run Rust checks"
-set -euo pipefail
-
-cargo test
-cargo check --target wasm32-wasip1

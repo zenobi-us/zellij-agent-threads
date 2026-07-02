@@ -1,0 +1,37 @@
+---
+$schema: "file://../../.moon/cache/schemas/project.json"
+
+language: typescript
+layer: library
+
+toolchains:
+  default: ["javascript", "bun"]
+
+tasks:
+  typecheck:
+    command: "bunx tsc --noEmit"
+    inputs:
+      - "package.json"
+      - "tsconfig.json"
+      - "pi-zellij-agent.ts"
+
+  build:
+    deps:
+      - "~:typecheck"
+    command: "noop"
+
+  lint:
+    deps:
+      - "~:typecheck"
+    command: "noop"
+
+  test:
+    command: "bun test"
+
+  install-local:
+    script: |
+      set -euo pipefail
+      mkdir -p "$HOME/.pi/agent/extensions"
+      ln -sfn "$PWD/pi-zellij-agent.ts" "$HOME/.pi/agent/extensions/zellij-agent.ts"
+    options:
+      runInCI: false

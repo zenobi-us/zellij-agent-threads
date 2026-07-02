@@ -1,0 +1,50 @@
+---
+$schema: "file://../../.moon/cache/schemas/project.json"
+
+language: rust
+layer: library
+
+tasks:
+  build:
+    script: |
+      set -euo pipefail
+      rustup target add wasm32-wasip1 >/dev/null 2>&1 || true
+      cargo build --release --target wasm32-wasip1
+    inputs:
+      - "Cargo.toml"
+      - "src/**/*.rs"
+      - ".cargo/config.toml"
+    outputs:
+      - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+
+  check:
+    script: |
+      set -euo pipefail
+      rustup target add wasm32-wasip1 >/dev/null 2>&1 || true
+      cargo check --target wasm32-wasip1
+    inputs:
+      - "Cargo.toml"
+      - "src/**/*.rs"
+      - ".cargo/config.toml"
+
+  typecheck:
+    deps:
+      - "~:check"
+    command: "noop"
+
+  test:
+    script: |
+      set -euo pipefail
+      host_target="$(rustc -vV | awk '/^host:/ {print $2}')"
+      cargo test --target "$host_target"
+    inputs:
+      - "Cargo.toml"
+      - "src/**/*.rs"
+      - ".cargo/config.toml"
+
+  dev:
+    deps:
+      - "~:build"
+    command: "zellij --layout layouts/dev.kdl"
+    options:
+      runInCI: false
