@@ -9,13 +9,13 @@ toolchains:
 
 tasks:
   dev:
-    command: "bun run dev"
+    command: "waku dev --port ${PORT:-3000}"
     options:
       runInCI: false
 
   build:
     dependsOn: ["generate-version-manifest"]
-    command: "bun run build"
+    command: waku build
     inputs:
       - "content/**/*"
       - "public/**/*"
@@ -42,8 +42,19 @@ tasks:
     options:
       cache: false
 
+  mdxcheck:
+    command: fumadocs-mdx
+    inputs:
+      - "content/**/*"
+      - "public/**/*"
+      - "package.json"
+      - "press.config.tsx"
+      - "source.config.ts"
+      - "tsconfig.json"
+      - "waku.config.ts"
+
   typecheck:
-    command: "bun run typecheck"
+    command: tsc --noEmit
     inputs:
       - "package.json"
       - "press.config.tsx"
