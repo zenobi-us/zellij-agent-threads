@@ -1,0 +1,35 @@
+name = "watchexec"
+type = "cli"
+
+[platform.linux]
+download-file = "watchexec-{version}-{arch}-unknown-linux-musl.tar.xz"
+checksum-file = "watchexec-{version}-{arch}-unknown-linux-musl.tar.xz.sha256"
+archive-prefix = "watchexec-{version}-{arch}-unknown-linux-musl"
+
+[platform.macos]
+download-file = "watchexec-{version}-{arch}-apple-darwin.tar.xz"
+checksum-file = "watchexec-{version}-{arch}-apple-darwin.tar.xz.sha256"
+archive-prefix = "watchexec-{version}-{arch}-apple-darwin"
+
+[platform.windows]
+download-file = "watchexec-{version}-{arch}-pc-windows-msvc.zip"
+checksum-file = "watchexec-{version}-{arch}-pc-windows-msvc.zip.sha256"
+archive-prefix = "watchexec-{version}-{arch}-pc-windows-msvc"
+exe-path = "watchexec.exe"
+archs = ["x86_64"]
+
+[install]
+download-url = "https://github.com/watchexec/watchexec/releases/download/v{version}/{download_file}"
+checksum-url = "https://github.com/watchexec/watchexec/releases/download/v{version}/{checksum_file}"
+
+[install.arch]
+x86_64 = "x86_64"
+aarch64 = "aarch64"
+
+[install.exes.watchexec]
+exe-path = "watchexec"
+primary = true
+
+[resolve]
+git-url = "https://github.com/watchexec/watchexec"
+version-pattern = "^v(?<version>.*)$"

@@ -6,6 +6,7 @@ rust = "stable"
 worktrunk = "0.62.0"
 bats = "1.13.0"
 trufflehog = "3.95.5"
+watchexec = "2.3.2"
 
 [settings]
 detect-strategy = "only-prototools"
@@ -16,3 +17,4 @@ builtin-plugins = ["bun", "rust"]
 trufflehog = "file://./proto/plugins/trufflehog.toml"
 worktrunk = "file://./proto/plugins/worktrunk.toml"
 bats = "file://./proto/plugins/bats.toml"
+watchexec = "file://./proto/plugins/watchexec.toml"
