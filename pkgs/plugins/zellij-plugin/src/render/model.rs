@@ -12,7 +12,7 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"
 {% for group in groups %}
 {{ group.tab_name }} (#{{ group.tab_id }})
 {% for session in group.sessions -%}
-  {{ session.pane }} {{ session.state }} {{ session.model }} {{ session.cwd }}
+  {{ session.pane }} {{ session.state | remap({ "running": "▶️", "idle": "💤" }) }} {{ session.model }} {{ session.cwd }}
 {% endfor -%}
 
 {% endfor %}

@@ -149,12 +149,12 @@ pub(crate) enum AgentState {
     Shutdown,
 }
 
-/// Returns fixed-width labels so columns do not jump when state changes.
+/// Returns the lowercase state label used in events and templates.
 pub(crate) fn state_label(state: &AgentState) -> &'static str {
     match state {
-        AgentState::Idle => "idle   ",
+        AgentState::Idle => "idle",
         AgentState::Running => "running",
-        AgentState::Shutdown => "closed ",
+        AgentState::Shutdown => "closed",
     }
 }
 
