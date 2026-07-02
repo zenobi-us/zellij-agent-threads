@@ -7,6 +7,8 @@ project:
 
 tasks:
   test:
-    command: "bash -n deploy-github-pages"
+    command: "bash -n deploy-github-pages generate-publish-git-tag npm-publish"
     inputs:
       - "deploy-github-pages"
+      - "generate-publish-git-tag"
+      - "npm-publish"

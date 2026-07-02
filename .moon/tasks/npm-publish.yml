@@ -10,36 +10,7 @@ tasks:
     deps:
       - "^:npm-publish"
       - "~:build"
-    script: |
-      set -euo pipefail
-
-      publish_tag="${PUBLISH_TAG:-}"
-      if [ -z "${publish_tag}" ]; then
-        echo "ERROR: PUBLISH_TAG is required (expected: latest or next)." >&2
-        exit 1
-      fi
-
-      eval "$("${MOON_WORKSPACE_ROOT}/.moon/tasks/generate-publish-git-tag" "${publish_tag}" ".")"
-
-      if [ "${publish_tag}" = "next" ]; then
-        echo "Preparing next prerelease: ${PUBLISH_CURRENT_VERSION} -> ${PUBLISH_VERSION}"
-        node -e '
-          const fs = require("node:fs");
-          const pkgPath = "package.json";
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-          pkg.version = process.argv[1];
-          fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-        ' "${PUBLISH_VERSION}"
-      fi
-
-      args=(--access public --tag "${publish_tag}")
-      # if [ -n "${GITHUB_ACTIONS:-}" ]; then
-      # args+=(--provenance)
-      # fi
-      #
-      echo "> npm publish ${args[*]}"
-
-      npm publish "${args[@]}"
+    command: "${MOON_WORKSPACE_ROOT}/pkgs/tools/deployment/npm-publish"
     options:
       cache: false
       runInCI: true
