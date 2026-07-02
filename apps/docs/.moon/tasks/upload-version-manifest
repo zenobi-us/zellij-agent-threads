@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log() { printf '\033[36m[docs:versions]\033[0m %s\n' "$*" >&2; }
+fail() { printf '\033[31m[docs:versions:fail]\033[0m %s\n' "$*" >&2; exit 1; }
+
+repo_name="boxfiles.github.io"
+branch="main"
+src="${MOON_PROJECT_ROOT}/public/releases.json"
+tmp="$(mktemp -d)"
+clone_dir="${tmp}/repo"
+
+git_name="${GIT_AUTHOR_NAME:-github-actions[bot]}"
+git_email="${GIT_AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+token="${DOCS_PUBLISH_TOKEN:-}"
+ssh_key="${DOCS_PUBLISH_SSH_KEY:-}"
+ssh_auth_sock="${SSH_AUTH_SOCK:-/tmp/docs_publish_ssh_agent.sock}"
+
+cleanup() { rm -rf "${tmp}"; }
+trap cleanup EXIT
+
+[ -f "${src}" ] || fail "version manifest missing: ${src}"
+
+if [ -n "${token}" ]; then
+  export GH_TOKEN="${token}"
+fi
+
+owner="${GITHUB_REPOSITORY_OWNER:-}"
+if [ -z "${owner}" ]; then
+  owner="$(gh repo view --json owner --jq .owner.login)"
+fi
+
+repo="${owner}/${repo_name}"
+clone_url="https://github.com/${repo}.git"
+
+if [ -n "${ssh_key}" ]; then
+  mkdir -p "${HOME}/.ssh"
+  chmod 700 "${HOME}/.ssh"
+  ssh-keyscan github.com >> "${HOME}/.ssh/known_hosts"
+  key_file="${tmp}/docs_publish_key"
+  printf '%s\n' "${ssh_key}" > "${key_file}"
+  chmod 600 "${key_file}"
+  ssh-agent -a "${ssh_auth_sock}" >/dev/null
+  SSH_AUTH_SOCK="${ssh_auth_sock}" ssh-add "${key_file}"
+  export SSH_AUTH_SOCK="${ssh_auth_sock}"
+  clone_url="git@github.com:${repo}.git"
+elif [ -n "${token}" ]; then
+  clone_url="https://x-access-token:${token}@github.com/${repo}.git"
+fi
+
+if git ls-remote "${clone_url}" >/dev/null 2>&1; then
+  log "target repo exists: ${repo}"
+elif [ -n "${token}" ]; then
+  log "target repo missing; creating ${repo}"
+  gh repo create "${repo}" --public --description "Boxfiles documentation site"
+else
+  fail "target repo missing or inaccessible: ${repo}"
+fi
+
+git clone "${clone_url}" "${clone_dir}"
+git -C "${clone_dir}" config user.name "${git_name}"
+git -C "${clone_dir}" config user.email "${git_email}"
+
+if git -C "${clone_dir}" rev-parse --verify HEAD >/dev/null 2>&1; then
+  git -C "${clone_dir}" switch "${branch}" 2>/dev/null || git -C "${clone_dir}" switch -C "${branch}"
+else
+  git -C "${clone_dir}" switch --orphan "${branch}"
+fi
+
+cp "${src}" "${clone_dir}/releases.json"
+git -C "${clone_dir}" add releases.json
+
+if git -C "${clone_dir}" diff --cached --quiet; then
+  log "no version manifest changes to publish"
+  exit 0
+fi
+
+git -C "${clone_dir}" commit -m "publish version manifest"
+git -C "${clone_dir}" push origin "HEAD:${branch}"
+log "version manifest published"

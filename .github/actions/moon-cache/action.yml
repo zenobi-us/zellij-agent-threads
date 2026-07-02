@@ -1,0 +1,33 @@
+name: Moon cache
+
+description: >-
+  Restore/save portable Moon cache artifacts (.moon/cache/hashes and
+  .moon/cache/outputs) for CI jobs. Requires manual invalidation via cache-version.
+
+inputs:
+  cache-version:
+    description: >-
+      Manual invalidation token for the Moon cache. Bump this when cache contents
+      become stale across CI runs.
+    required: false
+    default: v1
+  key-prefix:
+    description: Optional key prefix to isolate caches per workflow/job.
+    required: false
+    default: moon
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Moon artifacts
+      id: cache-moon
+      uses: actions/cache@v4
+      with:
+        path: |
+          .moon/cache/hashes
+          .moon/cache/outputs
+        key: >-
+          ${{ inputs.key-prefix }}-${{ runner.os }}-${{ inputs.cache-version }}-
+          ${{ hashFiles('**/moon.yml', '.moon/**/*.yml', 'package.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'go.sum') }}
+        restore-keys: |
+          ${{ inputs.key-prefix }}-${{ runner.os }}-${{ inputs.cache-version }}-

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+out="${MOON_PROJECT_ROOT:-${repo_root}/apps/docs}/public/releases.json"
+manifest="${repo_root}/.release-please-manifest.json"
+
+mkdir -p "$(dirname "${out}")"
+
+node -e '
+  const childProcess = require("node:child_process");
+  const fs = require("node:fs");
+  const path = require("node:path");
+
+  const repoRoot = process.argv[1];
+  const manifestPath = path.join(repoRoot, ".release-please-manifest.json");
+  const out = process.argv[2];
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const fallbackSha = process.env.GITHUB_SHA || childProcess.execFileSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
+  const packageSha = (packagePath) => {
+    try {
+      return childProcess.execFileSync("git", ["-C", repoRoot, "log", "-n", "1", "--format=%H", "--", packagePath], { encoding: "utf8" }).trim() || fallbackSha;
+    } catch {
+      return fallbackSha;
+    }
+  };
+
+  const data = {
+    generatedAt: new Date().toISOString(),
+    repository: process.env.GITHUB_REPOSITORY || "boxfiles/boxfiles",
+    ref: process.env.GITHUB_REF || childProcess.execFileSync("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim(),
+    sha: fallbackSha,
+    channel: process.env.PUBLISH_TAG || null,
+    packages: Object.entries(manifest).map(([packagePath, version]) => {
+      const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, packagePath, "package.json"), "utf8"));
+      return {
+        path: packagePath,
+        name: packageJson.name,
+        version,
+        sha: packageSha(packagePath),
+      };
+    }),
+  };
+
+  fs.writeFileSync(out, `${JSON.stringify(data, null, 2)}\n`);
+' "${repo_root}" "${out}"
+
+printf 'wrote %s\n' "${out}"

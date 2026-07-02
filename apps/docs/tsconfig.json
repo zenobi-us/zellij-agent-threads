@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["bun", "@types/mdx", "@types/react", "@types/react-dom"],
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    ".source/**/*",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.md",
+    "**/*.mdx"
+  ]
+}

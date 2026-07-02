@@ -1,0 +1,6 @@
+{
+  "releases_created": "true",
+  "prs_created": "true",
+  "paths_released": "[\"apps/web\",\"pkgs/libs/ui\"]",
+  "prs": "[{\"number\":42,\"title\":\"chore(main): release\"}]"
+}

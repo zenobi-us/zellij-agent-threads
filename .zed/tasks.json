@@ -1,0 +1,10 @@
+[
+  {
+    "label": "moon setup",
+    "command": "moon setup",
+    "args": [],
+    "hooks": ["create_worktree"],
+    "reveal": "always",
+    "hide": "never",
+  },
+]

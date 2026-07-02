@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+resolve_branch_name() {
+  local branch="${1:-}"
+
+  if [[ -n "${branch}" ]]; then
+    echo "${branch}"
+    return
+  fi
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo ""
+    return
+  fi
+
+  # Fails in detached HEAD state; that's fine, we'll treat as unresolved.
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  echo "${branch}"
+}
+
+main() {
+  local branch
+  branch="$(resolve_branch_name "${1:-}")"
+
+  case "${branch}" in
+  main)
+    echo "normal"
+    ;;
+  release/*)
+    echo "hotfix"
+    ;;
+  "")
+    echo "Unable to resolve branch name" >&2
+    exit 1
+    ;;
+  *)
+    echo "Unsupported branch for release mode: ${branch}" >&2
+    exit 1
+    ;;
+  esac
+}
+
+main "$@"

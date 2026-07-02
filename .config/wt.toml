@@ -1,0 +1,10 @@
+# Project Worktrunk config.
+# Project hooks require first-run approval with `wt config approvals add`.
+
+[[pre-start]]
+# Install workspace dependencies for new worktrees before handing control back.
+deps = "bun install"
+
+[[pre-merge]]
+# Keep merges from landing when TypeScript is broken.
+typecheck = "moon run repo:typecheck"

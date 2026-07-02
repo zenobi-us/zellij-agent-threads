@@ -1,0 +1,19 @@
+{
+  "apps/cli": "0.0.1",
+  "pkgs/config": "0.0.1",
+  "pkgs/core": "0.0.1",
+  "pkgs/diagnostics": "0.0.1",
+  "pkgs/plugin": "0.0.1",
+  "pkgs/provider-copy": "0.0.1",
+  "pkgs/provider-gpu": "0.0.1",
+  "pkgs/provider-link": "0.0.1",
+  "pkgs/provider-network": "0.0.1",
+  "pkgs/provider-os": "0.0.1",
+  "pkgs/provider-ownership": "0.0.1",
+  "pkgs/provider-packages": "0.0.1",
+  "pkgs/provider-permissions": "0.0.1",
+  "pkgs/provider-remove": "0.0.1",
+  "pkgs/provider-rename": "0.0.1",
+  "pkgs/provider-run": "0.0.1",
+  "pkgs/provider-user": "0.0.1"
+}

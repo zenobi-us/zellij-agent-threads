@@ -1,0 +1,77 @@
+name: Pr
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  Check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # We need full history for branch-aware tooling (moon affected/diff behavior).
+      # Shallow checkout can break base-branch comparisons in CI.
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Toolchain
+        uses: moonrepo/setup-toolchain@8794f0318b9df4a43a5ddc23cefd16f595b423dd # v0
+        with:
+          auto-install: true
+          auto-setup: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Scan PR commits for secrets
+        if: github.event_name == 'pull_request'
+        run: |
+          proto run trufflehog -- git file://. \
+            --since-commit "${{ github.event.pull_request.base.sha }}" \
+            --branch HEAD \
+            --results=verified,unknown \
+            --fail \
+            --no-update \
+            --github-actions
+
+      - name: Restore Moon cache
+        uses: ./.github/actions/moon-cache
+        with:
+          key-prefix: moon-pr
+          cache-version: v1
+
+      - name: Restore TypeScript build info cache
+        uses: ./.github/actions/tsbuildinfo-cache
+        with:
+          key-prefix: tsbuildinfo-pr
+          cache-version: v1
+
+      - name: Sync Moon Projects to release-please
+        uses: ./.github/actions/sync-moon-to-release-please
+
+      # Monorepo quality gate for pull requests.
+      - name: Run Checks
+        run: |
+          moon run :lint --affected
+          moon run :test --affected
+          moon run :build --affected
+
+      - uses: appthrust/moon-ci-retrospect@631a1e667f96e8ca893eab69f03e425f7fbfdc2b #v2.1.0
+        if: success() || failure()
+
+      - uses: moonrepo/run-report-action@bbe7e99bf2aca819ec660ec01fc59d84bdd492d6 # v1.10.0
+        if: success() || failure()
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}

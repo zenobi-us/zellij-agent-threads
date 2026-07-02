@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+# Build publish matrix from moon affected projects.
+# release-please payload is used only for mode/tag signal.
+
+set -euo pipefail
+
+require_payload() {
+  local payload="${1:-}"
+
+  if [[ -z "${payload}" ]]; then
+    echo "Missing JSON payload argument" >&2
+    exit 1
+  fi
+
+  if ! jq -e . >/dev/null 2>&1 <<<"${payload}"; then
+    echo "Invalid JSON payload passed as argv[0]" >&2
+    exit 1
+  fi
+}
+resolve_payload_arg() {
+  local payload_arg="${1:-}"
+
+  if [[ "${payload_arg}" == @* ]]; then
+    local payload_file="${payload_arg#@}"
+
+    if [[ -z "${payload_file}" || ! -f "${payload_file}" ]]; then
+      echo "Missing payload file: ${payload_file}" >&2
+      exit 1
+    fi
+
+    cat "${payload_file}"
+    return 0
+  fi
+
+  printf '%s' "${payload_arg}"
+}
+
+require_ref() {
+  local value="${1:-}"
+  local name="${2:-ref}"
+
+  if [[ -z "${value}" ]]; then
+    echo "Missing ${name} argument" >&2
+    exit 1
+  fi
+}
+
+resolve_mode() {
+  local payload="${1}"
+
+  jq -c '
+    def releases_created_bool:
+      if (.releases_created | type) == "boolean" then
+        .releases_created
+      else
+        ((.releases_created // "false") | tostring | ascii_downcase) == "true"
+      end;
+    if releases_created_bool
+      then { mode: "latest", tag: "latest" }
+      else { mode: "next", tag: "next" }
+    end
+  ' <<<"${payload}"
+}
+
+main() {
+  local payload_arg="${1:-}"
+  local base="${2:-}"
+  local head="${3:-}"
+  local payload
+
+  payload="$(resolve_payload_arg "${payload_arg}")"
+  require_payload "${payload}"
+  require_ref "${base}" "base"
+  require_ref "${head}" "head"
+
+  local signal_json
+  signal_json="$(resolve_mode "${payload}")"
+
+  local affected_json
+  affected_json="$(MOON_BASE="${base}" MOON_HEAD="${head}" moon query projects --affected)"
+  local affected_file signal_file
+  affected_file="$(mktemp)"
+  signal_file="$(mktemp)"
+  trap 'rm -f "${affected_file:-}" "${signal_file:-}"' EXIT
+
+  printf '%s' "${affected_json}" >"${affected_file}"
+  printf '%s' "${signal_json}" >"${signal_file}"
+  jq -cn \
+    --slurpfile affected "${affected_file}" \
+    --slurpfile signal "${signal_file}" '
+      [
+        (($affected[0].projects // [])[])
+        | select(( (.tasks // {}) | has("publish") ))
+        | {
+            target: .id,
+            tag: $signal[0].tag,
+            mode: $signal[0].mode,
+            version: ""
+          }
+      ]
+      | sort_by(.target)
+    '
+}
+
+main "$@"

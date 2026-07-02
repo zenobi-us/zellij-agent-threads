@@ -1,0 +1,26 @@
+name: Sync Moon projects to release-please
+
+description: Ensure release-please config packages include all moon project paths.
+
+runs:
+  using: composite
+  steps:
+    - name: Sync release-please config from moon projects
+      shell: bash
+      run: bash "${{ github.action_path }}/action.sh"
+
+    - name: Set Git Identity
+      uses: ./.github/actions/github-bot-identity
+
+    - name: Commit and push synced changes
+      shell: bash
+      run: |
+        if [[ -z "$(git status --porcelain)" ]]; then
+          echo "No changes to commit."
+          exit 0
+        fi
+
+        git add -A
+        git commit -m "chore(release-please): sync moon projects to release-please projects"
+        git push origin "HEAD:${{ github.ref_name }}"
+

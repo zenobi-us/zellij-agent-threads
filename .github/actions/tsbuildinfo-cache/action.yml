@@ -1,0 +1,33 @@
+name: TypeScript build info cache
+
+description: >-
+  Restore/save TypeScript incremental cache artifacts (*.tsbuildinfo and
+  .cache/tsc) for CI jobs. Requires manual invalidation via cache-version.
+
+inputs:
+  cache-version:
+    description: >-
+      Manual invalidation token for the TypeScript cache. Bump this when cache
+      contents become stale across CI runs.
+    required: false
+    default: v1
+  key-prefix:
+    description: Optional key prefix to isolate caches per workflow/job.
+    required: false
+    default: tsbuildinfo
+
+runs:
+  using: composite
+  steps:
+    - name: Cache TypeScript build info artifacts
+      id: cache-tsbuildinfo
+      uses: actions/cache@v4
+      with:
+        path: |
+          **/*.tsbuildinfo
+          **/.cache/tsc
+        key: >-
+          ${{ inputs.key-prefix }}-${{ runner.os }}-${{ inputs.cache-version }}-
+          ${{ hashFiles('**/tsconfig.json', '**/tsconfig.*.json', '**/moon.yml', '.moon/**/*.yml', 'package.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb') }}
+        restore-keys: |
+          ${{ inputs.key-prefix }}-${{ runner.os }}-${{ inputs.cache-version }}-

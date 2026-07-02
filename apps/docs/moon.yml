@@ -1,0 +1,68 @@
+---
+$schema: "file://../../.moon/cache/schemas/project.json"
+
+language: typescript
+layer: application
+
+toolchains:
+  default: ["javascript", "bun"]
+
+tasks:
+  dev:
+    command: "bun run dev"
+    options:
+      runInCI: false
+
+  build:
+    dependsOn: ["generate-version-manifest"]
+    command: "bun run build"
+    inputs:
+      - "content/**/*"
+      - "public/**/*"
+      - "package.json"
+      - "press.config.tsx"
+      - "source.config.ts"
+      - "tsconfig.json"
+      - "waku.config.ts"
+    outputs:
+      - "dist/public"
+
+  generate-version-manifest:
+    command: "bash .moon/tasks/generate-version-manifest"
+    inputs:
+      - "/.release-please-manifest.json"
+      - "/apps/*/package.json"
+      - "/pkgs/*/package.json"
+    outputs:
+      - "public/releases.json"
+
+  upload-version-manifest:
+    dependsOn: ["generate-version-manifest"]
+    command: "bash .moon/tasks/upload-version-manifest"
+    options:
+      cache: false
+
+  typecheck:
+    command: "bun run typecheck"
+    inputs:
+      - "package.json"
+      - "press.config.tsx"
+      - "source.config.ts"
+      - "tsconfig.json"
+      - "waku.config.ts"
+
+  test:
+    command: "bun test"
+
+  serve:
+    dependsOn: ["build"]
+    command: "bunx serve ./dist/public"
+    options:
+      runInCI: false
+
+  publish:
+    type: run
+    dependsOn: ["build"]
+    options:
+      cache: false
+    command: "bash .moon/tasks/publish"

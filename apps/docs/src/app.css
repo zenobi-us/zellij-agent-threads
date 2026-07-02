@@ -1,0 +1,25 @@
+/** vim: set ft=tailwindcss */
+@import "tailwindcss";
+
+@import 'fumadocs-ui/css/catppuccin.css';
+
+@import "fumadocs-ui/css/preset.css";
+@import "fumapress/css/preset.css";
+
+@theme {
+  --default-font-family: "Geist", sans-serif;
+  --font-mono: "Geist Mono", monospace;
+  --color-rp-base: #232136;
+  --color-rp-surface: #2a273f;
+  --color-rp-overlay: #393552;
+  --color-rp-muted: #6e6a86;
+  --color-rp-subtle: #908caa;
+  --color-rp-text: #e0def4;
+  --color-rp-love: #eb6f92;
+  --color-rp-gold: #f6c177;
+  --color-rp-rose: #ea9a97;
+  --color-rp-pine: #3e8fb0;
+  --color-rp-foam: #9ccfd8;
+  --color-rp-iris: #c4a7e7;
+}
+

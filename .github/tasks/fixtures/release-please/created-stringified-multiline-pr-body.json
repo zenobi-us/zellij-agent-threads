@@ -1,0 +1,6 @@
+{
+  "releases_created": "true",
+  "prs_created": "true",
+  "paths_released": "[\"apps/web\"]",
+  "prs": "[{\"number\":314,\"title\":\"chore(main): release 1.2.3\",\"body\":\"## What's Changed\\n\\n<details>\\n<summary>Dependency Updates</summary>\\n\\n* bump foo\\n* bump bar\\n\\n</details>\\n\\nSee [docs](https://example.com).\"}]"
+}

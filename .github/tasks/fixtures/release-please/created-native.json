@@ -1,0 +1,9 @@
+{
+  "releases_created": "true",
+  "prs_created": "true",
+  "paths_released": ["apps/api", "pkgs/libs/core"],
+  "prs": [
+    { "number": 100, "title": "fix: release api" },
+    { "number": 101, "title": "fix: release core" }
+  ]
+}

@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      publish_matrix: ${{ steps.publish-matrix.outputs.publish_matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: SetupToolchain
+        uses: moonrepo/setup-toolchain@8794f0318b9df4a43a5ddc23cefd16f595b423dd # v0
+        with:
+          auto-install: true
+          auto-setup: true
+
+      - name: RestoreMoonCache
+        uses: ./.github/actions/moon-cache
+        with:
+          key-prefix: moon-release
+          cache-version: v1
+
+      - name: PrepareReleasePleaseMode
+        id: mode
+        run: |
+          set -euo pipefail
+
+          mode="$(.github/tasks/get-release-mode "${GITHUB_REF_NAME}")"
+
+          case "${mode}" in
+            hotfix)
+              config_file="release-please-config--hotfix.json"
+              ;;
+            normal)
+              config_file="release-please-config--release.json"
+              ;;
+            *)
+              echo "Unsupported release mode: ${mode}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
+          echo "config_file=${config_file}" >> "${GITHUB_OUTPUT}"
+
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+        id: release-please
+        name: RunReleasePlease
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: ${{ steps.mode.outputs.config_file }}
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: false
+
+      - name: SummaryReleasePleaseOutputs
+        run: |
+          cat <<'EOF' | ./.github/tasks/summarise-release-please.sh
+          ${{ toJson(steps.release-please.outputs) }}
+          EOF
+        env:
+          RP_MODE: ${{ steps.mode.outputs.mode }}
+          RP_CONFIG_FILE: ${{ steps.mode.outputs.config_file }}
+
+      - id: publish-matrix
+        name: GeneratePublishMatrix
+        run: |
+          set -euo pipefail
+
+          payload_file="$(mktemp)"
+          trap 'rm -f "${payload_file}"' EXIT
+
+          cat >"${payload_file}" <<'EOF'
+          ${{ toJson(steps.release-please.outputs) }}
+          EOF
+          # release-please output is used only as a mode/tag signal via releases_created.
+          # publish units are resolved from moon affected query in get-publish-matrix.
+          base_ref='${{ github.event.before }}'
+          head_ref='${{ github.sha }}'
+          if [ -z "${base_ref}" ] || [ "${base_ref}" = "0000000000000000000000000000000000000000" ]; then
+            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+              base_ref="$(git rev-parse HEAD^)"
+            else
+              base_ref="${head_ref}"
+            fi
+          fi
+
+          publish_matrix="$(.github/tasks/get-publish-matrix "@${payload_file}" "${base_ref}" "${head_ref}" | jq -rc '.')"
+          echo "publish_matrix=${publish_matrix}" >> "${GITHUB_OUTPUT}"
+
+      - name: SummaryPublishMatrixOutputs
+        run: |
+          set -euo pipefail
+
+          publish_matrix=$(cat <<'EOF'
+          ${{ steps.publish-matrix.outputs.publish_matrix }}
+          EOF
+          )
+
+          {
+            echo "## Publish Matrix Outputs"
+            echo "- source of publish units: \`moon query projects --affected\`"
+            echo "- mode/tag signal: \`release-please outputs.releases_created\`"
+            echo "- released paths: informational only"
+            echo
+            echo "${publish_matrix}" | jq -r '
+              .[] |
+              "- target: \(.target // ""), version: \(.version // ""), mode: \(.mode // "")"
+            '
+            echo "<details><summary>publish matrix json</summary>"
+            echo
+            echo '```json'
+            echo "${publish_matrix}" | jq .
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    needs: process
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: needs.process.outputs.publish_matrix != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.process.outputs.publish_matrix) }}
+    steps:
+      - name: DispatchPublish-${{ matrix.target }}-${{ matrix.tag }}
+        uses: peter-evans/repository-dispatch@bf47d102fdb849e755b0b0023ea3e81a44b6f570 # v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: publish-package
+          client-payload: '{"target":"${{ matrix.target }}","tag":"${{ matrix.tag }}","mode":"${{ matrix.mode }}","version":"${{ matrix.version }}"}'

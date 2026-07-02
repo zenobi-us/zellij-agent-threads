@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  repo-setup [OWNER/REPO]
+
+Examples:
+  repo-setup
+  repo-setup acme/widgets
+
+Behavior:
+  1) Applies repository policy via `gh repo edit`
+  2) Configures Actions permissions so workflows can create/close/approve PRs
+  3) Sets squash commit message defaults (PR_TITLE + PR_BODY)
+  4) Applies default-branch protection with safe merge-on-existing behavior
+  5) Prints verification snapshot from GitHub API
+  6) Reminds about workflow-level permissions in YAML
+EOF
+}
+
+require_cmd() {
+  local cmd="$1"
+  command -v "$cmd" >/dev/null 2>&1 || {
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  }
+}
+
+resolve_repo() {
+  local repo="${1:-}"
+
+  if [[ -n "$repo" ]]; then
+    echo "$repo"
+    return
+  fi
+
+  gh repo view --json nameWithOwner --jq '.nameWithOwner'
+}
+
+get_default_branch() {
+  local repo="$1"
+  gh repo view "$repo" --json defaultBranchRef --jq '.defaultBranchRef.name'
+}
+
+apply_repo_edit() {
+  local repo="$1"
+
+  gh repo edit "$repo" \
+    --enable-squash-merge true \
+    --enable-merge-commit false \
+    --enable-rebase-merge false \
+    --delete-branch-on-merge true \
+    --enable-wiki false \
+    --enable-auto-merge true \
+    --allow-update-branch true
+}
+
+apply_actions_permissions() {
+  local repo="$1"
+
+  gh api \
+    -X PUT \
+    "repos/$repo/actions/permissions" \
+    -f enabled=true \
+    -f allowed_actions=all
+
+  gh api \
+    -X PUT \
+    "repos/$repo/actions/permissions/workflow" \
+    -f default_workflow_permissions=write \
+    -F can_approve_pull_request_reviews=true
+}
+
+apply_squash_defaults() {
+  local repo="$1"
+
+  gh api -X PATCH "repos/$repo" \
+    -f squash_merge_commit_title=PR_TITLE \
+    -f squash_merge_commit_message=PR_BODY
+}
+
+apply_branch_protection() {
+  local repo="$1"
+  local branch="$2"
+  local endpoint="repos/$repo/branches/$branch/protection"
+
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' RETURN
+
+  local current_json="$tmpdir/current-protection.json"
+  local fetch_err="$tmpdir/protection-fetch.err"
+  local intended_json="$tmpdir/intended-protection.json"
+  local merged_json="$tmpdir/merged-protection.json"
+
+  if gh api "$endpoint" >"$current_json" 2>"$fetch_err"; then
+    echo "Existing branch protection found on $branch"
+  else
+    if grep -q "404" "$fetch_err"; then
+      echo "No existing branch protection on $branch (fresh setup)"
+      printf '{}\n' >"$current_json"
+    else
+      echo "Failed to fetch branch protection; aborting to avoid unsafe overwrite." >&2
+      cat "$fetch_err" >&2
+      exit 1
+    fi
+  fi
+
+  cat >"$intended_json" <<'JSON'
+{
+  "required_status_checks": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "required_approving_review_count": 1,
+    "require_code_owner_reviews": false
+  },
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "block_creations": false,
+  "required_conversation_resolution": true,
+  "lock_branch": false,
+  "allow_fork_syncing": true
+}
+JSON
+
+  jq -s '.[0] * .[1]' \
+    "$current_json" \
+    "$intended_json" >"$merged_json"
+
+  gh api -X PUT "$endpoint" \
+    -H "Accept: application/vnd.github+json" \
+    --input "$merged_json"
+}
+
+verify() {
+  local repo="$1"
+  local branch="$2"
+
+  echo
+  echo "== Verification: repository settings =="
+  gh api "repos/$repo" --jq '{
+    allow_squash_merge,
+    allow_merge_commit,
+    allow_rebase_merge,
+    delete_branch_on_merge,
+    has_wiki,
+    allow_auto_merge,
+    allow_update_branch,
+    squash_merge_commit_title,
+    squash_merge_commit_message
+  }'
+
+  echo
+  echo "== Verification: actions permissions =="
+  gh api "repos/$repo/actions/permissions" --jq '{
+    enabled,
+    allowed_actions,
+    selected_actions_url
+  }'
+
+  echo
+  echo "== Verification: workflow token + PR approval =="
+  gh api "repos/$repo/actions/permissions/workflow" --jq '{
+    default_workflow_permissions,
+    can_approve_pull_request_reviews
+  }'
+
+  echo
+  echo "== Verification: branch protection ($branch) =="
+  gh api "repos/$repo/branches/$branch/protection" --jq '{
+    required_status_checks,
+    enforce_admins,
+    required_pull_request_reviews,
+    required_linear_history,
+    allow_force_pushes,
+    allow_deletions,
+    block_creations,
+    required_conversation_resolution,
+    lock_branch,
+    allow_fork_syncing
+  }'
+}
+
+print_workflow_permissions_reminder() {
+  cat <<'EOF'
+
+Reminder: repo-level settings are not enough for PR mutation in workflows.
+Ensure relevant workflow YAML includes:
+
+permissions:
+  contents: write
+  pull-requests: write
+EOF
+}
+
+main() {
+  local arg1="${1:-}"
+
+  if [[ "$arg1" == "-h" || "$arg1" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+
+  require_cmd gh
+  require_cmd jq
+
+  local repo
+  repo="$(resolve_repo "$arg1")"
+
+  if [[ -z "$repo" ]]; then
+    echo "Unable to resolve repository. Pass OWNER/REPO explicitly." >&2
+    exit 1
+  fi
+
+  local branch
+  branch="$(get_default_branch "$repo")"
+
+  if [[ -z "$branch" ]]; then
+    echo "Unable to resolve default branch for $repo" >&2
+    exit 1
+  fi
+
+  echo "Applying repository settings to: $repo"
+  echo "Default branch: $branch"
+
+  apply_repo_edit "$repo"
+  apply_actions_permissions "$repo"
+  apply_squash_defaults "$repo"
+  apply_branch_protection "$repo" "$branch"
+
+  verify "$repo" "$branch"
+  print_workflow_permissions_reminder
+}
+
+main "$@"

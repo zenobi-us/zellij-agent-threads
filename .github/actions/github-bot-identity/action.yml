@@ -1,0 +1,12 @@
+name: Git Identity Setup for GitHub Bot
+
+description: A GitHub Action to set the Git identity for the GitHub Actions bot, allowing it to make commits with a consistent identity.
+
+runs:
+  using: composite
+  steps:
+    - name: Set Git Identity
+      shell: bash
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
