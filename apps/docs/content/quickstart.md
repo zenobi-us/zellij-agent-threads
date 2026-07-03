@@ -18,7 +18,7 @@ Create a small Boxfiles workspace, add a manifest, inspect discovery, then plan 
 ## 1. Create a workspace
 
 ```sh
-mkdir workstation
+mkdir workstatio
 cd workstation
 mkdir -p modules/files
 ```
