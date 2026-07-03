@@ -10,11 +10,12 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"
   0 Agents
 {% else -%}
 {% for group in groups %}
-{{ group.tab_name }} (#{{ group.tab_id }})
+{{ " %s " | format(group.tab_name) | bg("cyan") | fg("black") }}
 {% for session in group.sessions -%}
-     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }}  {{ session.model }} — {{ session.title }}
+     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}
+     🍱 {{ session.model }} 
      📁 {{ session.cwd }}
-     ☑️  {{ session.current_task }}
+     {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
 {% endfor -%}
 
 {% endfor %}
