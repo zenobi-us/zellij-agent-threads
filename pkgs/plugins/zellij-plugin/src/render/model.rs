@@ -5,22 +5,21 @@ use serde::Serialize;
 use crate::config::RenderConfig;
 use crate::runtime::{basename, state_label, RuntimeState};
 
-pub(crate) const DEFAULT_TEMPLATE: &str = r#"
-{% if sessions | length == 0 -%}
+pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
   0 Agents
 {% else -%}
+
 {% for group in groups %}
-{{ " %s " | format(group.tab_name) | bg("cyan") | fg("black") }}
+{% call TabButton(tab=group.tab_id) -%}{{ " %s " | format(group.tab_name) | bg("cyan") | fg("black") }}{%- endcall %}
 {% for session in group.sessions -%}
-     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}
-     🍱 {{ session.model }} 
+     {% call PaneButton(pane=session.pane) -%}{{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}{%- endcall %}
+     🍱 {{ session.model }} {{ session.thinking_level }}
      📁 {{ session.cwd }}
      {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
 {% endfor -%}
 
 {% endfor %}
-{% endif -%}
-"#;
+{% endif -%}"#;
 
 /// Render-ready snapshot of runtime state.
 ///
@@ -67,7 +66,7 @@ impl RenderModel {
         for session in state.sessions.values() {
             let tab_id = session
                 .tab_id
-                .map(|id| id.to_string())
+                .map(|id| (id + 1).to_string())
                 .unwrap_or_else(|| "?".into());
             let tab_name = session
                 .tab_name

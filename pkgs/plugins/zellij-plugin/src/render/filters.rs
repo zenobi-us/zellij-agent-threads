@@ -7,6 +7,13 @@ pub(super) fn add_filters(env: &mut Environment<'_>) {
     env.add_filter("bg", bg);
 }
 
+use super::click::add_button_functions;
+
+pub(super) fn add_template_helpers(env: &mut Environment<'_>) {
+    add_filters(env);
+    add_button_functions(env);
+}
+
 fn remap(value: Value, mapping: Value) -> Result<Value, Error> {
     if mapping.kind() != ValueKind::Map {
         return Err(Error::new(
