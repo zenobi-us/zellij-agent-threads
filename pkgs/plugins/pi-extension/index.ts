@@ -2,6 +2,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { spawn } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { pipeline } from '@huggingface/transformers';
+
 
 const PIPE_NAME = "zellij-agent-threads";
 const STATUS_KEY = "zellij-agent";
@@ -16,12 +18,68 @@ type PaneTabInfo = {
   tab_name?: string;
 };
 
+let titleGenerator: Promise<any> | undefined;
+
+
+// Local title generation is best-effort; never block Pi's agent loop on it.
+async function generateSummaryTitle(sentence: string): Promise<string> {
+  titleGenerator ??= pipeline('text2text-generation', 'Xenova/flan-t5-small');
+  const generator = await titleGenerator;
+  const input = sentence.replace(/\s+/g, " ").trim().slice(0, 1_000);
+  const prompt = `Write a 4 to 8 word sentence title: ${input}`;
+
+  const response = await generator(prompt, {
+    max_new_tokens: 16,
+    temperature: 0.2,
+    do_sample: false
+  });
+
+  return cleanTitle(response[0]?.generated_text || input || "Untitled Group");
+}
+
+// Helper to clean up the output formatting
+function cleanTitle(text: string): string {
+  return text
+    .trim()
+    .replace(/^[.,\/#!$%\^&\*;:{}=\-_`~()]+|[.,\/#!$%\^&\*;:{}=\-_`~()]+$/g, "")
+    .split(/\s+/)
+    .slice(0, 8)
+    .join(" ")
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function textFromMessage(message: unknown): string | undefined {
+  const content = (message as { content?: unknown })?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  return content
+    .map((block) => {
+      if (typeof block !== "object" || block === null) return "";
+      if ((block as { type?: unknown }).type !== "text") return "";
+      return String((block as { text?: unknown }).text ?? "");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function lastUserOrAssistantText(messages: unknown[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const role = (message as { role?: unknown })?.role;
+    if (role !== "user" && role !== "assistant") continue;
+    const text = textFromMessage(message);
+    if (text) return text;
+  }
+}
+
 export default function (pi: ExtensionAPI) {
   let state: AgentState = "idle";
   let lastStatus = "init";
   let lastError: string | undefined;
   let publishCount = 0;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let title: string | undefined;
+  let currentTask: string | undefined;
 
   async function trace(message: string) {
     const line = `${new Date().toISOString()} ${message}\n`;
@@ -78,6 +136,13 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+
+  function sessionKey(ctx: ExtensionContext) {
+    const paneId = process.env.ZELLIJ_PANE_ID;
+    if (paneId) return `${process.env.ZELLIJ_SESSION_NAME ?? "zellij"}:${paneId}`;
+    return ctx.sessionManager.getSessionFile() ?? `${ctx.cwd}:${process.pid}`;
+  }
+
   async function publish(ctx: ExtensionContext, nextState = state, updateStatus = true) {
     try {
       state = nextState;
@@ -87,7 +152,7 @@ export default function (pi: ExtensionAPI) {
 
       const payload = JSON.stringify({
         version: 1,
-        session: ctx.sessionManager.getSessionFile() ?? `${ctx.cwd}:${process.pid}`,
+        session: sessionKey(ctx),
         cwd: ctx.cwd,
         zellij_session: process.env.ZELLIJ_SESSION_NAME,
         pane_id: process.env.ZELLIJ_PANE_ID,
@@ -95,6 +160,8 @@ export default function (pi: ExtensionAPI) {
         tab_name: tab?.tab_name,
         state,
         model: ctx.model?.id,
+        title,
+        current_task: currentTask,
         updated_at: Date.now(),
       });
 
@@ -127,11 +194,33 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", (_event, ctx) => {
+    title = undefined;
+    currentTask = undefined;
     scheduleRefresh(ctx);
     void publish(ctx, "idle");
   });
+  pi.on("before_agent_start", (event, ctx) => {
+    const prompt = event.prompt;
+    const isFirstPrompt = title === undefined;
+    title ??= cleanTitle(prompt || ctx.cwd);
+    currentTask = cleanTitle(prompt || title);
+    void publish(ctx, "running");
+    void generateSummaryTitle(prompt).then((summary) => {
+      if (isFirstPrompt) title = summary;
+      currentTask = summary;
+      void publish(ctx, "running");
+    }).catch((error) => { void trace(`title error ${error instanceof Error ? error.message : String(error)}`); });
+  });
   pi.on("agent_start", (_event, ctx) => { void publish(ctx, "running"); });
-  pi.on("agent_end", (_event, ctx) => { void publish(ctx, "idle"); });
+  pi.on("agent_end", (event, ctx) => {
+    const text = lastUserOrAssistantText(event.messages) ?? currentTask ?? title ?? ctx.cwd;
+    currentTask = cleanTitle(text);
+    void publish(ctx, "idle");
+    void generateSummaryTitle(text).then((summary) => {
+      currentTask = summary;
+      void publish(ctx, "idle");
+    }).catch((error) => { void trace(`title error ${error instanceof Error ? error.message : String(error)}`); });
+  });
   pi.on("model_select", (_event, ctx) => { void publish(ctx); });
   pi.on("session_shutdown", (_event, ctx) => {
     stopRefresh();
@@ -150,3 +239,4 @@ export default function (pi: ExtensionAPI) {
     },
   });
 }
+

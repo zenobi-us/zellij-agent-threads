@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["pi-zellij-agent.ts"]
+  "include": ["index.ts"]
 }

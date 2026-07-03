@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "dependencies": {},
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.3",
     "@types/node": "^26.0.1",

@@ -13,7 +13,7 @@ tasks:
     inputs:
       - "package.json"
       - "tsconfig.json"
-      - "pi-zellij-agent.ts"
+      - "index.ts"
 
   build:
     deps:
@@ -32,6 +32,6 @@ tasks:
     script: |
       set -euo pipefail
       mkdir -p "$HOME/.pi/agent/extensions"
-      ln -sfn "$PWD/pi-zellij-agent.ts" "$HOME/.pi/agent/extensions/zellij-agent.ts"
+      ln -sfn "$PWD/" "$HOME/.pi/agent/extensions/zellij-agent"
     options:
       runInCI: false
