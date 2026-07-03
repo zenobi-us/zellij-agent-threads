@@ -58,6 +58,49 @@ repo_slug() {
   printf '%s/%s\n' "${owner}" "${repo_name}"
 }
 
+normalize_github_repo() {
+  local url="${1%.git}"
+
+  case "${url}" in
+    git@github.com:*) printf '%s\n' "${url#git@github.com:}" ;;
+    ssh://git@github.com/*) printf '%s\n' "${url#ssh://git@github.com/}" ;;
+    https://github.com/*) printf '%s\n' "${url#https://github.com/}" ;;
+    http://github.com/*) printf '%s\n' "${url#http://github.com/}" ;;
+    */*) printf '%s\n' "${url}" ;;
+  esac
+}
+
+current_repo_slug() {
+  if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+    printf '%s\n' "${GITHUB_REPOSITORY}"
+    return 0
+  fi
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local origin
+    origin="$(git config --get remote.origin.url || true)"
+    [ -n "${origin}" ] && normalize_github_repo "${origin}"
+  fi
+}
+
+repo_equal() {
+  [ "${1,,}" = "${2,,}" ]
+}
+
+default_branch_for() {
+  local remote_url="$1"
+  local line target
+
+  line="$(git ls-remote --symref "${remote_url}" HEAD 2>/dev/null | while IFS= read -r row; do
+    case "${row}" in
+      ref:\ refs/heads/*) printf '%s\n' "${row}"; break ;;
+    esac
+  done)"
+  target="${line#ref: refs/heads/}"
+  target="${target%%[[:space:]]HEAD*}"
+  [ "${target}" != "${line}" ] && printf '%s\n' "${target}"
+}
+
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   usage
   exit 0
@@ -125,6 +168,16 @@ elif [ -n "${token}" ]; then
   gh repo create "${repo}" --public --description "${description}"
 else
   fail "target repo missing or inaccessible: ${repo}. Create it first, add deploy key, or set token."
+fi
+
+current_repo="$(current_repo_slug || true)"
+if [ -n "${current_repo}" ] && repo_equal "${repo}" "${current_repo}"; then
+  default_branch="$(default_branch_for "${clone_url}" || true)"
+  [ -n "${default_branch}" ] || fail "could not determine default branch for ${repo}; refusing same-repo publish"
+
+  if [ "${branch}" = "${default_branch}" ]; then
+    fail "refusing to publish ${repo}:${branch}; target is current repo default branch"
+  fi
 fi
 
 git clone "${clone_url}" "${clone_dir}"
