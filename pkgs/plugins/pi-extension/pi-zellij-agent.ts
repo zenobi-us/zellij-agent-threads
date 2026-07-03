@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 const PIPE_NAME = "zellij-agent-threads";
 const STATUS_KEY = "zellij-agent";
 const LOG_FILE = `${tmpdir()}/pi-zellij-agent-${process.getuid?.() ?? "user"}.log`;
+const REFRESH_MS = 2_000;
 
 type AgentState = "idle" | "running" | "shutdown";
 type PaneTabInfo = {
@@ -20,6 +21,7 @@ export default function (pi: ExtensionAPI) {
   let lastStatus = "init";
   let lastError: string | undefined;
   let publishCount = 0;
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function trace(message: string) {
     const line = `${new Date().toISOString()} ${message}\n`;
@@ -35,7 +37,6 @@ export default function (pi: ExtensionAPI) {
     try {
       if (!ctx.hasUI) return;
       ctx.ui.setStatus(STATUS_KEY, `zellij ${status}`);
-      ctx.ui.setWidget(STATUS_KEY, undefined);
     } catch {
       // ponytail: ctx can go stale after session replacement; Zellij publish must not crash Pi.
     }
@@ -77,11 +78,11 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  async function publish(ctx: ExtensionContext, nextState = state) {
+  async function publish(ctx: ExtensionContext, nextState = state, updateStatus = true) {
     try {
       state = nextState;
       publishCount += 1;
-      updateUi(ctx, "publishing");
+      if (updateStatus) updateUi(ctx, "publishing");
       const tab = await paneTabInfo();
 
       const payload = JSON.stringify({
@@ -100,20 +101,42 @@ export default function (pi: ExtensionAPI) {
       await trace(`publish state=${state} bytes=${payload.length}`);
       await pipeToPlugin(payload);
       lastError = undefined;
-      updateUi(ctx, "ok");
+      if (updateStatus) updateUi(ctx, "ok");
       await trace(`pipe ok state=${state}`);
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      updateUi(ctx, "error");
+      if (updateStatus) updateUi(ctx, "error");
       await trace(`pipe error state=${state} error=${lastError}`);
     }
   }
 
-  pi.on("session_start", (_event, ctx) => { void publish(ctx, "idle"); });
+  function stopRefresh() {
+    if (!refreshTimer) return;
+    clearTimeout(refreshTimer);
+    refreshTimer = undefined;
+  }
+
+  function scheduleRefresh(ctx: ExtensionContext) {
+    stopRefresh();
+    refreshTimer = setTimeout(() => {
+      void publish(ctx, state, false).finally(() => {
+        updateUi(ctx, "refreshing");
+        if (state !== "shutdown") scheduleRefresh(ctx);
+      });
+    }, REFRESH_MS);
+  }
+
+  pi.on("session_start", (_event, ctx) => {
+    scheduleRefresh(ctx);
+    void publish(ctx, "idle");
+  });
   pi.on("agent_start", (_event, ctx) => { void publish(ctx, "running"); });
   pi.on("agent_end", (_event, ctx) => { void publish(ctx, "idle"); });
   pi.on("model_select", (_event, ctx) => { void publish(ctx); });
-  pi.on("session_shutdown", (_event, ctx) => { void publish(ctx, "shutdown"); });
+  pi.on("session_shutdown", (_event, ctx) => {
+    stopRefresh();
+    void publish(ctx, "shutdown");
+  });
 
   pi.registerCommand("zellij-agent-publish", {
     description: "Publish this pi session to the Zellij agent plugin",
