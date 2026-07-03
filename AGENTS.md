@@ -47,3 +47,7 @@ Triage labels use the default canonical vocabulary. See `.memory/docs/agents/tri
 ### Domain docs
 
 Domain docs use a multi-context layout. See `.memory/docs/agents/domain.md`.
+
+### Zellij Development
+
+Use `zellij-plugin-dev` skill 
