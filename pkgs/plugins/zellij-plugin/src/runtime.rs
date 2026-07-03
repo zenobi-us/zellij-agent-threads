@@ -46,29 +46,32 @@ impl RuntimeState {
 
     /// Handles one Zellij pipe message.
     ///
-    /// Returns `false` when the pipe name is not ours so Zellij can keep routing
-    /// the message normally. Bad payloads are consumed and recorded as runtime
+    /// Returns `false` when the pipe name is not ours or when Zellij reports the
+    /// end of a pipe stream. Bad payloads are consumed and recorded as runtime
     /// errors because retrying the same malformed message cannot help.
     pub(crate) fn handle_pipe(&mut self, pipe_message: PipeMessage) -> bool {
         if pipe_message.name != PIPE_NAME {
             return false;
         }
 
-        self.pipe_count += 1;
         let Some(payload) = pipe_message.payload else {
-            self.last_error = Some("empty payload".into());
-            self.push_event(format!("pipe #{} empty payload", self.pipe_count));
-            return true;
+            return false;
         };
 
-        self.push_event(format!("pipe #{} bytes={}", self.pipe_count, payload.len()));
-
         let Ok(session) = serde_json::from_str::<AgentSession>(&payload) else {
+            self.pipe_count += 1;
             self.last_error = Some("invalid json".into());
             self.push_event(format!("pipe #{} invalid json", self.pipe_count));
             return true;
         };
 
+        if !self.session_update_changes_render(&session) {
+            self.apply_session_update(session);
+            return false;
+        }
+
+        self.pipe_count += 1;
+        self.push_event(format!("pipe #{} bytes={}", self.pipe_count, payload.len()));
         self.push_event(format!(
             "{} {}",
             state_label(&session.state).trim(),
@@ -112,6 +115,17 @@ impl RuntimeState {
         }
     }
 
+    /// Returns whether a decoded session report changes anything the plugin draws.
+    fn session_update_changes_render(&self, session: &AgentSession) -> bool {
+        match session.state {
+            AgentState::Shutdown => self.sessions.contains_key(&session.session),
+            _ => self
+                .sessions
+                .get(&session.session)
+                .is_none_or(|current| !current.same_render_fields(session)),
+        }
+    }
+
     /// Appends a short diagnostic event while keeping the log bounded for tiny panes.
     fn push_event(&mut self, event: String) {
         const MAX_EVENTS: usize = 6;
@@ -149,6 +163,18 @@ pub(crate) enum AgentState {
     Shutdown,
 }
 
+impl AgentSession {
+    /// Compares only fields used by the default render model/template.
+    fn same_render_fields(&self, other: &Self) -> bool {
+        self.cwd == other.cwd
+            && self.pane_id == other.pane_id
+            && self.tab_id == other.tab_id
+            && self.tab_name == other.tab_name
+            && self.state == other.state
+            && self.model == other.model
+    }
+}
+
 /// Returns the lowercase state label used in events and templates.
 pub(crate) fn state_label(state: &AgentState) -> &'static str {
     match state {
@@ -178,6 +204,7 @@ fn pane_id_matches(session_pane_id: &str, pane_id: PaneId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zellij_tile::prelude::PipeSource;
 
     fn session(session: &str, pane_id: Option<&str>) -> AgentSession {
         AgentSession {
@@ -194,6 +221,55 @@ mod tests {
         }
     }
 
+    fn pipe_message(payload: AgentSession) -> PipeMessage {
+        PipeMessage {
+            source: PipeSource::Cli("test".into()),
+            name: PIPE_NAME.into(),
+            payload: Some(serde_json::to_string(&payload).unwrap()),
+            args: BTreeMap::new(),
+            is_private: false,
+        }
+    }
+
+    #[test]
+    fn pipe_end_message_does_not_request_render() {
+        let mut runtime = RuntimeState::default();
+        let mut message = pipe_message(session("a", Some("1")));
+        message.payload = None;
+
+        assert!(!runtime.handle_pipe(message));
+        assert_eq!(runtime.pipe_count, 0);
+        assert!(runtime.last_error.is_none());
+    }
+
+    #[test]
+    fn unchanged_session_pipe_does_not_request_render() {
+        let mut runtime = RuntimeState::default();
+        let mut first = session("a", Some("1"));
+        first.updated_at = 1;
+        assert!(runtime.handle_pipe(pipe_message(first.clone())));
+
+        let mut unchanged = first;
+        unchanged.updated_at = 2;
+        assert!(!runtime.handle_pipe(pipe_message(unchanged)));
+        assert_eq!(runtime.pipe_count, 1);
+    }
+
+    #[test]
+    fn hidden_field_change_updates_without_render() {
+        let mut runtime = RuntimeState::default();
+        let first = session("a", Some("1"));
+        assert!(runtime.handle_pipe(pipe_message(first)));
+
+        let mut hidden_change = session("a", Some("1"));
+        hidden_change.zellij_session = Some("renamed".into());
+        assert!(!runtime.handle_pipe(pipe_message(hidden_change)));
+        assert_eq!(runtime.pipe_count, 1);
+        assert_eq!(
+            runtime.sessions["a"].zellij_session.as_deref(),
+            Some("renamed")
+        );
+    }
     #[test]
     fn removes_only_sessions_in_closed_terminal_pane() {
         let mut runtime = RuntimeState::default();
