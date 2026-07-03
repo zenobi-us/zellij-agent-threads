@@ -12,7 +12,8 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"
 {% for group in groups %}
 {{ group.tab_name }} (#{{ group.tab_id }})
 {% for session in group.sessions -%}
-  {{ session.pane }} {{ session.state | remap({ "running": "▶️", "idle": "💤" }) }} {{ session.model }} {{ session.cwd }}
+     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": ">", "idle": "-" }) }} {{ session.model }}
+       {{ session.cwd }}
 {% endfor -%}
 
 {% endfor %}
@@ -56,16 +57,18 @@ pub(super) struct SessionLine {
 impl RenderModel {
     /// Builds a testable render snapshot from runtime state and render config.
     pub(crate) fn from_runtime(state: &RuntimeState, config: &RenderConfig) -> Self {
-        let sessions: Vec<_> = state
-            .sessions
-            .values()
-            .map(session_line)
-            .collect();
+        let sessions: Vec<_> = state.sessions.values().map(session_line).collect();
 
         let mut groups = BTreeMap::<String, TabGroup>::new();
         for session in state.sessions.values() {
-            let tab_id = session.tab_id.map(|id| id.to_string()).unwrap_or_else(|| "?".into());
-            let tab_name = session.tab_name.clone().unwrap_or_else(|| "unknown tab".into());
+            let tab_id = session
+                .tab_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "?".into());
+            let tab_name = session
+                .tab_name
+                .clone()
+                .unwrap_or_else(|| "unknown tab".into());
             let key = format!("{tab_id}\0{tab_name}");
             groups
                 .entry(key)

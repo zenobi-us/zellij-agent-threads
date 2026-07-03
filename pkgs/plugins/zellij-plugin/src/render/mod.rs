@@ -25,16 +25,16 @@ use template::render_template;
 pub(crate) struct Renderer;
 
 impl Renderer {
-    /// Clears the pane and paints visible rows for the current terminal size.
+    /// Paints visible rows for the current terminal size.
     ///
     /// `rows` and `cols` come from Zellij, so zero-sized panes are valid during
     /// layout churn and should render nothing rather than panic.
     pub(crate) fn render(model: &RenderModel, rows: usize, cols: usize) {
-        clear_screen();
-
         if rows == 0 || cols == 0 {
             return;
         }
+
+        clear_plugin_rows(rows, cols);
 
         let button = collapse_button(model.collapsed);
         let rendered =
@@ -49,6 +49,23 @@ impl Renderer {
             print_line(row, line_cols, line);
         }
         print_button(0, cols, button);
+    }
+}
+
+/// Clears only the plugin render area.
+///
+/// Do not call Zellij's `clear_screen()` here: in zellij-tile 0.44 it clears the
+/// focused pane's scroll buffer, which can be a neighboring terminal pane.
+fn clear_plugin_rows(rows: usize, cols: usize) {
+    let blank = " ".repeat(cols);
+    for row in 0..rows {
+        print_text_with_coordinates(
+            Text::new(blank.clone()).opaque(),
+            0,
+            row,
+            Some(cols),
+            Some(1),
+        );
     }
 }
 
@@ -98,7 +115,8 @@ mod tests {
         assert!(render_template(&model).unwrap().contains("project"));
 
         let mut remap_config = RenderConfig::default();
-        remap_config.template = "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into();
+        remap_config.template =
+            "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into();
         let remap_model = RenderModel::from_runtime(&runtime, &remap_config);
         assert_eq!(render_template(&remap_model).unwrap(), "RUN");
     }
