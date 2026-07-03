@@ -101,6 +101,8 @@ mod tests {
                     zellij_session: Some("z".into()),
                     state: AgentState::Running,
                     model: Some("m".into()),
+                    title: Some("First Message Title".into()),
+                    current_task: Some("Latest Task".into()),
                     updated_at: 0,
                 },
             )]),

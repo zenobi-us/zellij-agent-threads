@@ -12,8 +12,9 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"
 {% for group in groups %}
 {{ group.tab_name }} (#{{ group.tab_id }})
 {% for session in group.sessions -%}
-     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": ">", "idle": "-" }) }} {{ session.model }}
-       {{ session.cwd }}
+     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }}  {{ session.model }} — {{ session.title }}
+     📁 {{ session.cwd }}
+     ☑️  {{ session.current_task }}
 {% endfor -%}
 
 {% endfor %}
@@ -52,6 +53,8 @@ pub(super) struct SessionLine {
     pane: String,
     cwd: String,
     model: String,
+    title: String,
+    current_task: String,
 }
 
 impl RenderModel {
@@ -98,6 +101,11 @@ fn session_line(session: &crate::runtime::AgentSession) -> SessionLine {
         pane: session.pane_id.clone().unwrap_or_else(|| "?".into()),
         cwd: basename(&session.cwd).into(),
         model: session.model.clone().unwrap_or_else(|| "?".into()),
+        title: session
+            .title
+            .clone()
+            .unwrap_or_else(|| basename(&session.cwd).into()),
+        current_task: session.current_task.clone().unwrap_or_default(),
     }
 }
 
@@ -121,6 +129,8 @@ mod tests {
                     zellij_session: Some("z".into()),
                     state: AgentState::Running,
                     model: Some("m".into()),
+                    title: Some("First Message Title".into()),
+                    current_task: Some("Latest Task".into()),
                     updated_at: 0,
                 },
             )]),

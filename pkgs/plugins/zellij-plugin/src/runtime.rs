@@ -108,20 +108,22 @@ impl RuntimeState {
     /// sessions only; keeping closed sessions would make the pane noisy over long
     /// Zellij sessions.
     fn apply_session_update(&mut self, session: AgentSession) {
+        let key = session.cache_key();
         if session.state == AgentState::Shutdown {
-            self.sessions.remove(&session.session);
+            self.sessions.remove(&key);
         } else {
-            self.sessions.insert(session.session.clone(), session);
+            self.sessions.insert(key, session);
         }
     }
 
     /// Returns whether a decoded session report changes anything the plugin draws.
     fn session_update_changes_render(&self, session: &AgentSession) -> bool {
+        let key = session.cache_key();
         match session.state {
-            AgentState::Shutdown => self.sessions.contains_key(&session.session),
+            AgentState::Shutdown => self.sessions.contains_key(&key),
             _ => self
                 .sessions
-                .get(&session.session)
+                .get(&key)
                 .is_none_or(|current| !current.same_render_fields(session)),
         }
     }
@@ -151,6 +153,8 @@ pub(crate) struct AgentSession {
     pub(crate) tab_name: Option<String>,
     pub(crate) state: AgentState,
     pub(crate) model: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) current_task: Option<String>,
     pub(crate) updated_at: u64,
 }
 
@@ -164,6 +168,9 @@ pub(crate) enum AgentState {
 }
 
 impl AgentSession {
+    fn cache_key(&self) -> String {
+        self.pane_id.clone().unwrap_or_else(|| self.session.clone())
+    }
     /// Compares only fields used by the default render model/template.
     fn same_render_fields(&self, other: &Self) -> bool {
         self.cwd == other.cwd
@@ -172,6 +179,8 @@ impl AgentSession {
             && self.tab_name == other.tab_name
             && self.state == other.state
             && self.model == other.model
+            && self.title == other.title
+            && self.current_task == other.current_task
     }
 }
 
@@ -217,6 +226,8 @@ mod tests {
             zellij_session: None,
             state: AgentState::Idle,
             model: None,
+            title: None,
+            current_task: None,
             updated_at: 0,
         }
     }
@@ -256,6 +267,16 @@ mod tests {
     }
 
     #[test]
+    fn same_pane_replaces_new_pi_session() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.handle_pipe(pipe_message(session("old", Some("1")))));
+        assert!(!runtime.handle_pipe(pipe_message(session("new", Some("1")))));
+
+        assert_eq!(runtime.sessions.len(), 1);
+        assert_eq!(runtime.sessions["1"].session, "new");
+    }
+
+    #[test]
     fn hidden_field_change_updates_without_render() {
         let mut runtime = RuntimeState::default();
         let first = session("a", Some("1"));
@@ -266,7 +287,7 @@ mod tests {
         assert!(!runtime.handle_pipe(pipe_message(hidden_change)));
         assert_eq!(runtime.pipe_count, 1);
         assert_eq!(
-            runtime.sessions["a"].zellij_session.as_deref(),
+            runtime.sessions["1"].zellij_session.as_deref(),
             Some("renamed")
         );
     }
