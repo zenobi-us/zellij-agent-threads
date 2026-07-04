@@ -44,6 +44,11 @@ impl RuntimeState {
         self.collapsed
     }
 
+    /// Sets collapsed UI state from cross-plugin layout sync.
+    pub(crate) fn set_collapsed(&mut self, collapsed: bool) {
+        self.collapsed = collapsed;
+    }
+
     /// Handles one Zellij pipe message.
     ///
     /// Returns `false` when the pipe name is not ours or when Zellij reports the

@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PluginConfig {
     pub(crate) render: RenderConfig,
-    pub(crate) resize_steps: usize,
+    pub(crate) collapsed_cols: usize,
+    pub(crate) expanded_cols: usize,
 }
 
 impl Default for PluginConfig {
@@ -24,7 +25,8 @@ impl Default for PluginConfig {
     fn default() -> Self {
         Self {
             render: RenderConfig::default(),
-            resize_steps: 5,
+            collapsed_cols: 8,
+            expanded_cols: 40,
         }
     }
 }
@@ -39,7 +41,8 @@ impl PluginConfig {
         let default = Self::default();
         Self {
             render: RenderConfig::parse(configuration),
-            resize_steps: parse_usize(configuration, "resize_steps", default.resize_steps),
+            collapsed_cols: parse_usize(configuration, "collapsed_cols", default.collapsed_cols),
+            expanded_cols: parse_usize(configuration, "expanded_cols", default.expanded_cols),
         }
     }
 }
@@ -105,20 +108,26 @@ mod tests {
         let config = PluginConfig::parse(&BTreeMap::from([
             ("title".into(), "agents".into()),
             ("empty_message".into(), "none".into()),
-            ("resize_steps".into(), "3".into()),
+            ("collapsed_cols".into(), "6".into()),
+            ("expanded_cols".into(), "30".into()),
             ("template".into(), "{{ status }}".into()),
         ]));
 
         assert_eq!(config.render.title, "agents");
         assert_eq!(config.render.empty_message, "none");
         assert_eq!(config.render.template, "{{ status }}");
-        assert_eq!(config.resize_steps, 3);
+        assert_eq!(config.collapsed_cols, 6);
+        assert_eq!(config.expanded_cols, 30);
     }
 
     #[test]
-    fn invalid_resize_steps_falls_back_to_default() {
-        let config = PluginConfig::parse(&BTreeMap::from([("resize_steps".into(), "bad".into())]));
+    fn invalid_widths_fall_back_to_default() {
+        let config = PluginConfig::parse(&BTreeMap::from([
+            ("collapsed_cols".into(), "bad".into()),
+            ("expanded_cols".into(), "also-bad".into()),
+        ]));
 
-        assert_eq!(config.resize_steps, PluginConfig::default().resize_steps);
+        assert_eq!(config.collapsed_cols, PluginConfig::default().collapsed_cols);
+        assert_eq!(config.expanded_cols, PluginConfig::default().expanded_cols);
     }
 }
