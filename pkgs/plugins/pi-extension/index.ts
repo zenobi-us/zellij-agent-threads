@@ -26,7 +26,7 @@ async function generateSummaryTitle(sentence: string): Promise<string> {
   titleGenerator ??= pipeline('text2text-generation', 'Xenova/flan-t5-small');
   const generator = await titleGenerator;
   const input = sentence.replace(/\s+/g, " ").trim().slice(0, 1_000);
-  const prompt = `Write a 4 to 8 word sentence title: ${input}`;
+  const prompt = `Write a 4-8 word sentence that describes this purpose of this message: ${input}`;
 
   const response = await generator(prompt, {
     max_new_tokens: 16,
