@@ -61,11 +61,12 @@ pub(super) fn collect_hitboxes(state: &State<'_, '_>, rendered: &str) -> (String
 
     let mut clean = String::new();
     let mut hitboxes = Vec::new();
+    let mut active = None;
     for (row, line) in rendered.lines().enumerate() {
         if row > 0 {
             clean.push('\n');
         }
-        let (line, mut line_hitboxes) = strip_line_markers(row, line, &actions);
+        let (line, mut line_hitboxes) = strip_line_markers(row, line, &actions, &mut active);
         clean.push_str(&line);
         hitboxes.append(&mut line_hitboxes);
     }
@@ -124,27 +125,24 @@ fn tab_arg(kwargs: &Kwargs) -> Result<u32, Error> {
 
 fn caller_label(state: &State<'_, '_>, kwargs: &Kwargs) -> Result<String, Error> {
     let caller: Value = kwargs.get("caller")?;
-    let label = state.format(caller.call(state, &[])?)?;
-    if label.contains('\n') {
-        return Err(Error::new(
-            ErrorKind::InvalidOperation,
-            "button body must be one line",
-        ));
-    }
-    Ok(label)
+    state.format(caller.call(state, &[])?)
 }
 
-fn strip_line_markers(row: usize, line: &str, actions: &[ClickAction]) -> (String, Vec<Hitbox>) {
+fn strip_line_markers(
+    row: usize,
+    line: &str,
+    actions: &[ClickAction],
+    active: &mut Option<(usize, usize)>,
+) -> (String, Vec<Hitbox>) {
     let mut clean = String::new();
     let mut hitboxes = Vec::new();
-    let mut active: Option<(usize, usize)> = None;
     let mut col = 0;
     let mut i = 0;
 
     while i < line.len() {
         let rest = &line[i..];
         if let Some((id, consumed)) = parse_marker(rest, BUTTON_START) {
-            active = Some((id, col));
+            *active = Some((id, col));
             i += consumed;
             continue;
         }
@@ -174,6 +172,20 @@ fn strip_line_markers(row: usize, line: &str, actions: &[ClickAction]) -> (Strin
         i += ch.len_utf8();
     }
 
+    if let Some((id, start_col)) = active {
+        if let Some(action) = actions.get(*id) {
+            if col > *start_col {
+                hitboxes.push(Hitbox {
+                    row,
+                    start_col: *start_col,
+                    end_col: col,
+                    action: action.clone(),
+                });
+            }
+        }
+        *active = Some((*id, 0));
+    }
+
     (clean, hitboxes)
 }
 
@@ -193,7 +205,8 @@ mod tests {
         let action = ClickAction::FocusPane { pane: "1".into() };
         let input = format!("x{BUTTON_START}0{MARKER_END}abc{BUTTON_END}0{MARKER_END}y");
 
-        let (clean, hitboxes) = strip_line_markers(2, &input, &[action.clone()]);
+        let mut active = None;
+        let (clean, hitboxes) = strip_line_markers(2, &input, &[action.clone()], &mut active);
 
         assert_eq!(clean, "xabcy");
         assert_eq!(
@@ -213,11 +226,45 @@ mod tests {
         let input =
             format!("{BUTTON_START}0{MARKER_END}\u{1b}[31mred\u{1b}[0m{BUTTON_END}0{MARKER_END}");
 
-        let (clean, hitboxes) = strip_line_markers(0, &input, &[action.clone()]);
+        let mut active = None;
+        let (clean, hitboxes) = strip_line_markers(0, &input, &[action.clone()], &mut active);
 
         assert_eq!(clean, "\u{1b}[31mred\u{1b}[0m");
         assert_eq!(hitboxes[0].start_col, 0);
         assert_eq!(hitboxes[0].end_col, 3);
         assert_eq!(hitboxes[0].action, action);
+    }
+
+    #[test]
+    fn multiline_button_registers_one_hitbox_per_visible_line() {
+        let action = ClickAction::FocusPane { pane: "1".into() };
+        let mut env = minijinja::Environment::new();
+        add_button_functions(&mut env);
+        let captured = env
+            .template_from_str("x{% call PaneButton(pane=\"1\") %}ab\ncd{% endcall %}y")
+            .unwrap()
+            .render_captured(())
+            .unwrap();
+
+        let (clean, hitboxes) = collect_hitboxes(captured.state(), captured.output());
+
+        assert_eq!(clean, "xab\ncdy");
+        assert_eq!(
+            hitboxes,
+            vec![
+                Hitbox {
+                    row: 0,
+                    start_col: 1,
+                    end_col: 3,
+                    action: action.clone(),
+                },
+                Hitbox {
+                    row: 1,
+                    start_col: 0,
+                    end_col: 2,
+                    action,
+                },
+            ]
+        );
     }
 }

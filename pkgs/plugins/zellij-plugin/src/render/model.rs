@@ -12,10 +12,13 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% for group in groups %}
 {% call TabButton(tab=group.tab_id) -%}{{ " %s " | format(group.tab_name) | bg("cyan") | fg("black") }}{%- endcall %}
 {% for session in group.sessions -%}
-     {% call PaneButton(pane=session.pane) -%}{{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}{%- endcall %}
+     {% call PaneButton(pane=session.pane) -%}
+     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}
      🍱 {{ session.model }} {{ session.thinking_level }}
      📁 {{ session.cwd }}
      {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
+     {%- endcall %}
+
 {% endfor -%}
 
 {% endfor %}
