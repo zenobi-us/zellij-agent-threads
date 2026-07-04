@@ -22,6 +22,7 @@ pub(crate) struct PaneSizeService {
     peers: Vec<u32>,
     own_plugin_url: Option<String>,
     own_cols: usize,
+    resize_direction: Option<Direction>,
     revision: u64,
     seen_revisions: HashMap<u32, u64>,
 }
@@ -51,6 +52,7 @@ impl PaneSizeService {
             peers: Vec::new(),
             own_plugin_url: None,
             own_cols: 0,
+            resize_direction: None,
             revision: 0,
             seen_revisions: HashMap::new(),
         }
@@ -64,12 +66,21 @@ impl PaneSizeService {
 
     pub(crate) fn sync_peers(&mut self, self_id: Option<u32>, manifest: PaneManifest) {
         let Some(self_id) = self_id else { return };
-        let panes = manifest.panes.values().flat_map(|panes| panes.iter());
-        let all_plugins: Vec<_> = panes.filter(|pane| pane.is_plugin).collect();
+        let all_panes: Vec<_> = manifest
+            .panes
+            .values()
+            .flat_map(|panes| panes.iter())
+            .collect();
+        let all_plugins: Vec<_> = all_panes
+            .iter()
+            .copied()
+            .filter(|pane| pane.is_plugin)
+            .collect();
 
         if let Some(own) = all_plugins.iter().find(|pane| pane.id == self_id) {
             self.own_plugin_url = own.plugin_url.clone();
             self.own_cols = own.pane_content_columns;
+            self.resize_direction = resize_border_direction(own, &all_panes);
         }
 
         let Some(own_plugin_url) = self.own_plugin_url.as_deref() else {
@@ -91,7 +102,12 @@ impl PaneSizeService {
         let Some(self_id) = self_id else { return };
         self.set_current_cols(current_cols);
         let target_cols = self.target_cols(collapsed);
-        resize_plugin_pane_to(PaneId::Plugin(self_id), self.own_cols, target_cols);
+        resize_plugin_pane_to(
+            PaneId::Plugin(self_id),
+            self.own_cols,
+            target_cols,
+            self.resize_direction,
+        );
         self.own_cols = target_cols;
         self.revision += 1;
 
@@ -135,7 +151,12 @@ impl PaneSizeService {
 
         self.set_current_cols(current_cols);
         if let Some(self_id) = self_id {
-            resize_plugin_pane_to(PaneId::Plugin(self_id), self.own_cols, message.target_cols);
+            resize_plugin_pane_to(
+                PaneId::Plugin(self_id),
+                self.own_cols,
+                message.target_cols,
+                self.resize_direction,
+            );
             self.own_cols = message.target_cols;
         }
         Some(message.collapsed)
@@ -150,8 +171,30 @@ impl PaneSizeService {
     }
 }
 
+fn resize_border_direction(own: &PaneInfo, panes: &[&PaneInfo]) -> Option<Direction> {
+    let min_x = panes.iter().map(|pane| pane.pane_x).min()?;
+    let max_right = panes
+        .iter()
+        .map(|pane| pane.pane_x + pane.pane_columns)
+        .max()?;
+    let own_right = own.pane_x + own.pane_columns;
+
+    if own.pane_x == min_x && own_right < max_right {
+        Some(Direction::Right)
+    } else if own_right == max_right && own.pane_x > min_x {
+        Some(Direction::Left)
+    } else {
+        None
+    }
+}
+
 #[cfg(not(test))]
-fn resize_plugin_pane_to(pane_id: PaneId, current_cols: usize, target_cols: usize) {
+fn resize_plugin_pane_to(
+    pane_id: PaneId,
+    current_cols: usize,
+    target_cols: usize,
+    direction: Option<Direction>,
+) {
     if current_cols == 0 || current_cols == target_cols {
         return;
     }
@@ -161,13 +204,19 @@ fn resize_plugin_pane_to(pane_id: PaneId, current_cols: usize, target_cols: usiz
         Resize::Increase
     };
     for _ in 0..current_cols.abs_diff(target_cols) {
-        resize_pane_with_id(ResizeStrategy::new(resize, None), pane_id);
+        resize_pane_with_id(ResizeStrategy::new(resize, direction), pane_id);
     }
 }
 
 #[cfg(test)]
-fn resize_plugin_pane_to(_pane_id: PaneId, _current_cols: usize, _target_cols: usize) {}
+fn resize_plugin_pane_to(
+    _pane_id: PaneId,
+    _current_cols: usize,
+    _target_cols: usize,
+    _direction: Option<Direction>,
+) {
 
+}
 #[cfg(not(test))]
 fn send_control_message(peer: u32, payload: String) {
     pipe_message_to_plugin(MessageToPlugin {
@@ -207,5 +256,45 @@ mod tests {
 
         assert_eq!(service.handle_pipe(&message, None, 0), Some(true));
         assert_eq!(service.handle_pipe(&message, None, 0), None);
+    }
+
+    #[test]
+    fn chooses_right_border_for_left_sidebar() {
+        let own = pane(1, 0, 8);
+        let main = pane(2, 8, 72);
+
+        assert_eq!(resize_border_direction(&own, &[&own, &main]), Some(Direction::Right));
+    }
+
+    #[test]
+    fn chooses_left_border_for_right_sidebar() {
+        let main = pane(1, 0, 72);
+        let own = pane(2, 72, 8);
+
+        assert_eq!(resize_border_direction(&own, &[&main, &own]), Some(Direction::Left));
+    }
+
+    #[test]
+    fn chooses_border_against_terminal_neighbor() {
+        let own = pane(1, 0, 8);
+        let terminal = PaneInfo {
+            id: 2,
+            is_plugin: false,
+            pane_x: 8,
+            pane_columns: 72,
+            ..Default::default()
+        };
+
+        assert_eq!(resize_border_direction(&own, &[&own, &terminal]), Some(Direction::Right));
+    }
+
+    fn pane(id: u32, pane_x: usize, pane_columns: usize) -> PaneInfo {
+        PaneInfo {
+            id,
+            is_plugin: true,
+            pane_x,
+            pane_columns,
+            ..Default::default()
+        }
     }
 }
