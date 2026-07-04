@@ -36,6 +36,46 @@ struct PaneSizeMessage {
     source_plugin_id: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PaneSizeEffect {
+    ResizePluginPane {
+        pane_id: PaneId,
+        current_cols: usize,
+        target_cols: usize,
+        direction: Option<Direction>,
+    },
+    SendControlMessage {
+        peer: u32,
+        payload: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PaneSizeUpdate {
+    pub(crate) collapsed: bool,
+    pub(crate) effects: Vec<PaneSizeEffect>,
+}
+
+pub(crate) struct ZellijLayoutAdapter;
+
+impl ZellijLayoutAdapter {
+    pub(crate) fn apply(effects: Vec<PaneSizeEffect>) {
+        for effect in effects {
+            match effect {
+                PaneSizeEffect::ResizePluginPane {
+                    pane_id,
+                    current_cols,
+                    target_cols,
+                    direction,
+                } => resize_plugin_pane_to(pane_id, current_cols, target_cols, direction),
+                PaneSizeEffect::SendControlMessage { peer, payload } => {
+                    send_control_message(peer, payload)
+                }
+            }
+        }
+    }
+}
+
 impl Default for PaneSizeConfig {
     fn default() -> Self {
         Self {
@@ -98,31 +138,46 @@ impl PaneSizeService {
         self.peers.dedup();
     }
 
-    pub(crate) fn local_toggle(&mut self, self_id: Option<u32>, collapsed: bool, current_cols: usize) {
-        let Some(self_id) = self_id else { return };
+    pub(crate) fn local_toggle(
+        &mut self,
+        self_id: Option<u32>,
+        should_be_collapsed: bool,
+        current_cols: usize,
+    ) -> Vec<PaneSizeEffect> {
+        let Some(self_id) = self_id else {
+            return Vec::new();
+        };
         self.set_current_cols(current_cols);
-        let target_cols = self.target_cols(collapsed);
-        resize_plugin_pane_to(
-            PaneId::Plugin(self_id),
-            self.own_cols,
+        let target_cols = self.target_cols_for_state(should_be_collapsed);
+        let mut effects = vec![PaneSizeEffect::ResizePluginPane {
+            pane_id: PaneId::Plugin(self_id),
+            current_cols: self.own_cols,
             target_cols,
-            self.resize_direction,
-        );
+            direction: self.resize_direction,
+        }];
         self.own_cols = target_cols;
         self.revision += 1;
 
         let message = PaneSizeMessage {
             kind: "pane_size".into(),
-            collapsed,
+            collapsed: should_be_collapsed,
             target_cols,
             revision: self.revision,
             source_plugin_id: self_id,
         };
-        let Ok(payload) = serde_json::to_string(&message) else { return };
+        let Ok(payload) = serde_json::to_string(&message) else {
+            return effects;
+        };
 
-        for peer in &self.peers {
-            send_control_message(*peer, payload.clone());
-        }
+        effects.extend(
+            self.peers
+                .iter()
+                .map(|peer| PaneSizeEffect::SendControlMessage {
+                    peer: *peer,
+                    payload: payload.clone(),
+                }),
+        );
+        effects
     }
 
     pub(crate) fn handle_pipe(
@@ -130,7 +185,7 @@ impl PaneSizeService {
         pipe_message: &PipeMessage,
         self_id: Option<u32>,
         current_cols: usize,
-    ) -> Option<bool> {
+    ) -> Option<PaneSizeUpdate> {
         if pipe_message.name != SIZE_PIPE_NAME {
             return None;
         }
@@ -150,20 +205,24 @@ impl PaneSizeService {
         *last_seen = message.revision;
 
         self.set_current_cols(current_cols);
+        let mut effects = Vec::new();
         if let Some(self_id) = self_id {
-            resize_plugin_pane_to(
-                PaneId::Plugin(self_id),
-                self.own_cols,
-                message.target_cols,
-                self.resize_direction,
-            );
+            effects.push(PaneSizeEffect::ResizePluginPane {
+                pane_id: PaneId::Plugin(self_id),
+                current_cols: self.own_cols,
+                target_cols: message.target_cols,
+                direction: self.resize_direction,
+            });
             self.own_cols = message.target_cols;
         }
-        Some(message.collapsed)
+        Some(PaneSizeUpdate {
+            collapsed: message.collapsed,
+            effects,
+        })
     }
 
-    fn target_cols(&self, collapsed: bool) -> usize {
-        if collapsed {
+    fn target_cols_for_state(&self, should_be_collapsed: bool) -> usize {
+        if should_be_collapsed {
             self.config.collapsed_cols
         } else {
             self.config.expanded_cols
@@ -215,7 +274,6 @@ fn resize_plugin_pane_to(
     _target_cols: usize,
     _direction: Option<Direction>,
 ) {
-
 }
 #[cfg(not(test))]
 fn send_control_message(peer: u32, payload: String) {
@@ -254,8 +312,38 @@ mod tests {
             is_private: false,
         };
 
-        assert_eq!(service.handle_pipe(&message, None, 0), Some(true));
+        assert_eq!(
+            service.handle_pipe(&message, None, 0).unwrap().collapsed,
+            true
+        );
         assert_eq!(service.handle_pipe(&message, None, 0), None);
+    }
+
+    #[test]
+    fn local_toggle_returns_resize_and_peer_messages() {
+        let mut service = PaneSizeService::new(PaneSizeConfig::default());
+        service.peers = vec![2, 3];
+
+        let effects = service.local_toggle(Some(1), true, 16);
+
+        assert_eq!(effects.len(), 3);
+        assert!(matches!(
+            effects[0],
+            PaneSizeEffect::ResizePluginPane {
+                pane_id: PaneId::Plugin(1),
+                current_cols: 16,
+                target_cols: 8,
+                direction: None,
+            }
+        ));
+        assert!(matches!(
+            effects[1],
+            PaneSizeEffect::SendControlMessage { peer: 2, .. }
+        ));
+        assert!(matches!(
+            effects[2],
+            PaneSizeEffect::SendControlMessage { peer: 3, .. }
+        ));
     }
 
     #[test]
@@ -263,7 +351,10 @@ mod tests {
         let own = pane(1, 0, 8);
         let main = pane(2, 8, 72);
 
-        assert_eq!(resize_border_direction(&own, &[&own, &main]), Some(Direction::Right));
+        assert_eq!(
+            resize_border_direction(&own, &[&own, &main]),
+            Some(Direction::Right)
+        );
     }
 
     #[test]
@@ -271,7 +362,10 @@ mod tests {
         let main = pane(1, 0, 72);
         let own = pane(2, 72, 8);
 
-        assert_eq!(resize_border_direction(&own, &[&main, &own]), Some(Direction::Left));
+        assert_eq!(
+            resize_border_direction(&own, &[&main, &own]),
+            Some(Direction::Left)
+        );
     }
 
     #[test]
@@ -285,7 +379,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(resize_border_direction(&own, &[&own, &terminal]), Some(Direction::Right));
+        assert_eq!(
+            resize_border_direction(&own, &[&own, &terminal]),
+            Some(Direction::Right)
+        );
     }
 
     fn pane(id: u32, pane_x: usize, pane_columns: usize) -> PaneInfo {

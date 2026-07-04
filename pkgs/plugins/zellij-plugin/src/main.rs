@@ -3,12 +3,12 @@ use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
 mod config;
-mod render;
 mod pane_size;
+mod render;
 mod runtime;
 
 use config::PluginConfig;
-use pane_size::{PaneSizeConfig, PaneSizeService};
+use pane_size::{PaneSizeConfig, PaneSizeService, ZellijLayoutAdapter};
 use render::{hitbox_at, ClickAction, Hitbox, RenderModel, Renderer};
 use runtime::RuntimeState;
 
@@ -47,11 +47,12 @@ impl ZellijPlugin for PluginState {
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        if let Some(collapsed) =
+        if let Some(update) =
             self.pane_size
                 .handle_pipe(&pipe_message, self.plugin_id, self.runtime.last_cols)
         {
-            self.runtime.set_collapsed(collapsed);
+            self.runtime.set_collapsed(update.collapsed);
+            ZellijLayoutAdapter::apply(update.effects);
             return true;
         }
         self.runtime.handle_pipe(pipe_message)
@@ -68,9 +69,13 @@ impl ZellijPlugin for PluginState {
         match event {
             Event::Mouse(Mouse::LeftClick(row, col)) => match hitbox_at(&self.hitboxes, row, col) {
                 Some(ClickAction::ToggleCollapse) => {
-                    let collapsed = self.runtime.toggle_collapsed();
-                    self.pane_size
-                        .local_toggle(self.plugin_id, collapsed, self.runtime.last_cols);
+                    let should_be_collapsed = self.runtime.toggle_collapsed();
+                    let effects = self.pane_size.local_toggle(
+                        self.plugin_id,
+                        should_be_collapsed,
+                        self.runtime.last_cols,
+                    );
+                    ZellijLayoutAdapter::apply(effects);
                     true
                 }
                 Some(ClickAction::SwitchTab { tab }) => {

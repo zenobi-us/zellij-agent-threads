@@ -26,7 +26,7 @@ impl Default for PluginConfig {
         Self {
             render: RenderConfig::default(),
             collapsed_cols: 8,
-            expanded_cols: 40,
+            expanded_cols: 16,
         }
     }
 }
@@ -127,7 +127,10 @@ mod tests {
             ("expanded_cols".into(), "also-bad".into()),
         ]));
 
-        assert_eq!(config.collapsed_cols, PluginConfig::default().collapsed_cols);
+        assert_eq!(
+            config.collapsed_cols,
+            PluginConfig::default().collapsed_cols
+        );
         assert_eq!(config.expanded_cols, PluginConfig::default().expanded_cols);
     }
 }
