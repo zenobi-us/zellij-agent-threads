@@ -36,6 +36,7 @@ impl ZellijPlugin for PluginState {
             EventType::Mouse,
             EventType::PaneClosed,
             EventType::PaneUpdate,
+            EventType::TabUpdate,
             EventType::PermissionRequestResult,
         ]);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
@@ -95,9 +96,11 @@ impl ZellijPlugin for PluginState {
                 true
             }
             Event::PaneUpdate(pane_manifest) => {
+                let focus_changed = self.runtime.sync_pane_focus(&pane_manifest);
                 self.pane_size.sync_peers(self.plugin_id, pane_manifest);
-                false
+                focus_changed
             }
+            Event::TabUpdate(tabs) => self.runtime.sync_active_tab(&tabs),
             Event::PermissionRequestResult(_) => {
                 set_selectable(false);
                 true

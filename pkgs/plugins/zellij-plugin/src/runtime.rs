@@ -25,6 +25,8 @@ pub(crate) struct RuntimeState {
     pub(crate) last_error: Option<String>,
     pub(crate) collapsed: bool,
     pub(crate) last_cols: usize,
+    pub(crate) focused_pane: Option<String>,
+    pub(crate) active_tab: Option<usize>,
 }
 
 impl RuntimeState {
@@ -47,6 +49,32 @@ impl RuntimeState {
     /// Sets collapsed UI state from cross-plugin layout sync.
     pub(crate) fn set_collapsed(&mut self, collapsed: bool) {
         self.collapsed = collapsed;
+    }
+
+    pub(crate) fn sync_pane_focus(
+        &mut self,
+        manifest: &zellij_tile::prelude::PaneManifest,
+    ) -> bool {
+        let focused = manifest
+            .panes
+            .values()
+            .flat_map(|panes| panes.iter())
+            .find(|pane| pane.is_focused)
+            .map(pane_key);
+        if self.focused_pane == focused {
+            return false;
+        }
+        self.focused_pane = focused;
+        true
+    }
+
+    pub(crate) fn sync_active_tab(&mut self, tabs: &[zellij_tile::prelude::TabInfo]) -> bool {
+        let active = tabs.iter().find(|tab| tab.active).map(|tab| tab.tab_id);
+        if self.active_tab == active {
+            return false;
+        }
+        self.active_tab = active;
+        true
     }
 
     /// Handles one Zellij pipe message.
@@ -215,9 +243,18 @@ fn pane_id_matches(session_pane_id: &str, pane_id: PaneId) -> bool {
     }
 }
 
+fn pane_key(pane: &zellij_tile::prelude::PaneInfo) -> String {
+    if pane.is_plugin {
+        format!("plugin_{}", pane.id)
+    } else {
+        pane.id.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use zellij_tile::prelude::PipeSource;
 
     fn session(session: &str, pane_id: Option<&str>) -> AgentSession {
@@ -310,5 +347,34 @@ mod tests {
         assert_eq!(runtime.sessions.len(), 2);
         assert!(runtime.sessions.contains_key("c"));
         assert!(runtime.sessions.contains_key("d"));
+    }
+
+    #[test]
+    fn tracks_focused_pane_from_manifest() {
+        let mut runtime = RuntimeState::default();
+        let mut pane = zellij_tile::prelude::PaneInfo::default();
+        pane.id = 7;
+        pane.is_focused = true;
+        let manifest = zellij_tile::prelude::PaneManifest {
+            panes: HashMap::from([(0, vec![pane])]),
+        };
+
+        assert!(runtime.sync_pane_focus(&manifest));
+        assert_eq!(runtime.focused_pane.as_deref(), Some("7"));
+        assert!(!runtime.sync_pane_focus(&manifest));
+    }
+
+    #[test]
+    fn tracks_active_tab() {
+        let mut runtime = RuntimeState::default();
+        let tabs = vec![zellij_tile::prelude::TabInfo {
+            tab_id: 3,
+            active: true,
+            ..Default::default()
+        }];
+
+        assert!(runtime.sync_active_tab(&tabs));
+        assert_eq!(runtime.active_tab, Some(3));
+        assert!(!runtime.sync_active_tab(&tabs));
     }
 }

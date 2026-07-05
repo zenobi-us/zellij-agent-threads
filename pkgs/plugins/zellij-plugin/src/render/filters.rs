@@ -5,6 +5,25 @@ pub(super) fn add_filters(env: &mut Environment<'_>) {
     env.add_filter("remap", remap);
     env.add_filter("fg", fg);
     env.add_filter("bg", bg);
+    env.add_filter("dim", dim);
+    env.add_filter("bold", bold);
+    env.add_filter("italic", italic);
+}
+
+fn dim(value: Value) -> Result<Value, Error> {
+    Ok(style(value, 2))
+}
+
+fn bold(value: Value) -> Result<Value, Error> {
+    Ok(style(value, 1))
+}
+
+fn italic(value: Value) -> Result<Value, Error> {
+    Ok(style(value, 3))
+}
+
+fn style(value: Value, code: u8) -> Value {
+    Value::from(format!("\u{1b}[{}m{}\u{1b}[0m", code, value))
 }
 
 use super::click::add_button_functions;
@@ -121,6 +140,24 @@ mod tests {
         assert_eq!(
             rendered,
             "\u{1b}[32mrun\u{1b}[0m \u{1b}[41mstop\u{1b}[0m \u{1b}[38;5;34midx\u{1b}[0m"
+        );
+    }
+
+    #[test]
+    fn styles_text_with_sgr_attributes() {
+        let mut env = Environment::new();
+        add_filters(&mut env);
+
+        let rendered = env
+            .render_str(
+                "{{ 'muted' | dim }} {{ 'loud' | bold }} {{ 'tilt' | italic }}",
+                context! {},
+            )
+            .unwrap();
+
+        assert_eq!(
+            rendered,
+            "\u{1b}[2mmuted\u{1b}[0m \u{1b}[1mloud\u{1b}[0m \u{1b}[3mtilt\u{1b}[0m"
         );
     }
 

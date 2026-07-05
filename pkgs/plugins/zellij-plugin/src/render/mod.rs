@@ -119,6 +119,8 @@ mod tests {
             last_error: None,
             collapsed: false,
             last_cols: 0,
+            focused_pane: Some("1".into()),
+            active_tab: Some(7),
         };
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());

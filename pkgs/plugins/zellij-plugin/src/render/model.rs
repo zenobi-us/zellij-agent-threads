@@ -8,14 +8,17 @@ use crate::runtime::{basename, state_label, RuntimeState};
 pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
   0 Agents
 {% else -%}
-
+{% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
+{% endif -%}
 {% for group in groups %}
-{% call TabButton(tab=group.tab_id) -%}{{ " %s " | format(group.tab_name) | bg("cyan") | fg("black") }}{%- endcall %}
+{% set tab_label = " %s " | format(group.tab_name) -%}
+{% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | dim }}{%- endcall %}
 {% for session in group.sessions -%}
      {% call PaneButton(pane=session.pane) -%}
-     {{ "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) }} {{ " %s " | format(session.title) }}
-     🍱 {{ session.model }} {{ session.thinking_level }}
-     📁 {{ session.cwd }}
+     {% set title = " %s " | format(session.title) -%}
+     {{ "%3s" | format(session.pane) | bold if session.focused else "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) | fg("green") if session.state == "running" else session.state | remap({ "running": "🏃", "idle": "⏸️" }) | dim }} {{ title | bold if session.focused else title | dim if not session.active_tab else title }}
+     {{ "🍱 %s" | format(session.model) | dim }}
+     {{ "📁 %s" | format(session.cwd) | dim }}
      {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
      {%- endcall %}
 
@@ -37,6 +40,8 @@ pub(crate) struct RenderModel {
     pub(super) groups: Vec<TabGroup>,
     pub(super) events: Vec<String>,
     pub(super) template: String,
+    pub(super) has_error: bool,
+    pub(super) last_error: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -44,6 +49,7 @@ pub(super) struct TabGroup {
     tab_id: String,
     tab_name: String,
     sessions: Vec<SessionLine>,
+    active: bool,
 }
 
 /// One display row for a Pi agent session.
@@ -58,12 +64,18 @@ pub(super) struct SessionLine {
     model: String,
     title: String,
     current_task: String,
+    focused: bool,
+    active_tab: bool,
 }
 
 impl RenderModel {
     /// Builds a testable render snapshot from runtime state and render config.
     pub(crate) fn from_runtime(state: &RuntimeState, config: &RenderConfig) -> Self {
-        let sessions: Vec<_> = state.sessions.values().map(session_line).collect();
+        let sessions: Vec<_> = state
+            .sessions
+            .values()
+            .map(|session| session_line(session, state))
+            .collect();
 
         let mut groups = BTreeMap::<String, TabGroup>::new();
         for session in state.sessions.values() {
@@ -75,16 +87,18 @@ impl RenderModel {
                 .tab_name
                 .clone()
                 .unwrap_or_else(|| "unknown tab".into());
+            let active = session.tab_id == state.active_tab;
             let key = format!("{tab_id}\0{tab_name}");
             groups
                 .entry(key)
                 .or_insert_with(|| TabGroup {
                     tab_id,
                     tab_name,
+                    active,
                     sessions: Vec::new(),
                 })
                 .sessions
-                .push(session_line(session));
+                .push(session_line(session, state));
         }
 
         Self {
@@ -94,14 +108,19 @@ impl RenderModel {
             groups: groups.into_values().collect(),
             events: state.events.iter().rev().cloned().collect(),
             template: config.template.clone(),
+            has_error: state.last_error.is_some(),
+            last_error: state.last_error.clone().unwrap_or_default(),
         }
     }
 }
 
-fn session_line(session: &crate::runtime::AgentSession) -> SessionLine {
+fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) -> SessionLine {
+    let pane = session.pane_id.clone().unwrap_or_else(|| "?".into());
     SessionLine {
         state: state_label(&session.state),
-        pane: session.pane_id.clone().unwrap_or_else(|| "?".into()),
+        focused: state.focused_pane.as_deref() == Some(pane.as_str()),
+        active_tab: session.tab_id == state.active_tab,
+        pane,
         cwd: basename(&session.cwd).into(),
         model: session.model.clone().unwrap_or_else(|| "?".into()),
         title: session
@@ -142,6 +161,8 @@ mod tests {
             last_error: None,
             collapsed: false,
             last_cols: 0,
+            focused_pane: Some("1".into()),
+            active_tab: Some(7),
         };
 
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
@@ -154,5 +175,8 @@ mod tests {
         assert_eq!(model.sessions.len(), 1);
         assert_eq!(model.groups.len(), 1);
         assert_eq!(model.events, vec!["new", "old"]);
+        assert!(model.groups[0].active);
+        assert!(model.sessions[0].focused);
+        assert!(model.sessions[0].active_tab);
     }
 }
