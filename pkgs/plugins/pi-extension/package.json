@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0"
+    "typebox": "^1.2.2"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.3",
