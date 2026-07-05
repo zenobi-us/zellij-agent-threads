@@ -10,7 +10,7 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% else -%}
 {% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
 {% endif -%}
-{{ " %s " | format(zellij_session) | bg("blue") | fg("white") }}
+{{ " %s " | format(zellij_session) | bg("yellow") | fg("black") }}
 {% for group in groups %}
 {% set tab_label = " %s " | format(group.tab_name) -%}
 {% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | dim }}{%- endcall %}
