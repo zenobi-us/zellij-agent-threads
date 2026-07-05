@@ -11,20 +11,20 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
 {% endif -%}
 {{ " %s " | format(zellij_session) | bg("yellow") | fg("black") }}
+{% macro indicator(focused) -%}{{ " " | bg("blue") | fg("black") if focused else " " }}{%- endmacro %}
+{% macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro %}
 {% for group in groups %}
 {% set tab_label = " %s " | format(group.tab_name) -%}
 {% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | dim }}{%- endcall %}
-{% macro focus_style(text, focused) -%}
-  {{ text | bg("blue") | fg("black") if focused else text | dim }}
-{%- endmacro %}
+
 {% for session in group.sessions -%}
 {% call PaneButton(pane=session.pane) -%}
-     {%- set icon = session.state | remap({ "running": "󱉺", "idle": "󰏧" }) -%}
-     {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
-    {{ focus_style(agent | bold, session.focused) }}
-    {{ session.title | bold if session.focused else session.title | dim }}
-     {{ session.cwd | bold if session.focused else session.cwd | dim }}
-    {% if session.state == "running" -%}{{ session.current_task | bold if session.focused else session.current_task | dim }}{%- endif %}
+    {%- set icon = session.state | remap({ "running": "󱉺", "idle": "󰏧" }) -%}
+    {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
+{{ indicator(session.focused) }} {{ t(agent | bold, session.focused) }}
+{{ indicator(session.focused) }}  󰆈 {{ session.title | bold if session.focused else session.title | dim }}
+{{ indicator(session.focused) }}   {{ session.cwd | bold if session.focused else session.cwd | dim }}
+{% if session.state == "running" -%}{{ indicator(session.focused) }}  {{ session.current_task | bold if session.focused else session.current_task | dim }}{%- endif %}
 {%- endcall %}
 
 {% endfor -%}
