@@ -73,4 +73,23 @@ tasks:
       persistent: true
       runInCI: false
 
-  #TODO: add a publish task here that builds the wasm and uploads it to the release
+  publish:
+    type: run
+    deps:
+      - "~:build"
+    inputs:
+      - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+    options:
+      cache: false
+      runInCI: true
+    script: |
+      set -euo pipefail
+
+      wasm_path="$PWD/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+      asset_name="zellij-plugin-agent-threads.wasm"
+      repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+      tag="${PUBLISH_TAG:?PUBLISH_TAG is required}"
+
+      test -f "$wasm_path"
+      gh release view "$tag" --repo "$repo" >/dev/null
+      gh release upload "$tag" "$wasm_path#$asset_name" --repo "$repo" --clobber
