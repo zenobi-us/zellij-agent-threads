@@ -40,7 +40,7 @@ export class ZellijPublisher {
   constructor(
     private statusWidget: StatusWidget,
     private state: PublisherState = { state: "idle" },
-  ) {}
+  ) { }
 
   /**
    * Session config can change on reload/resume, so the publisher keeps the same
@@ -58,17 +58,6 @@ export class ZellijPublisher {
     this.state = { ...this.state, ...values };
   }
 
-  /**
-   * Maps publisher state to footer interpolation keys. Title is populated from
-   * Zellij pane metadata during publish, not from conversation text.
-   */
-  statusValues(): StatusValues {
-    return {
-      state: this.state.state,
-      title: this.state.title,
-      tool: this.state.currentTool,
-    };
-  }
 
   /**
    * Sends the current Pi session snapshot to the Zellij plugin. Status updates
@@ -78,7 +67,7 @@ export class ZellijPublisher {
     try {
       this.state.state = nextState;
       this.publishCount += 1;
-      if (updateStatus) this.statusWidget.update(ctx, "publishing", this.statusValues());
+      if (updateStatus) this.statusWidget.update(ctx, "");
       const tab = await this.paneTabInfo();
       const paneTitle = tab?.title ?? tab?.name ?? tab?.tab_name;
       this.state.title = paneTitle;
@@ -101,11 +90,11 @@ export class ZellijPublisher {
       await this.trace(`publish state=${this.state.state} bytes=${payload.length}`);
       await this.pipeToPlugin(payload);
       this.lastError = undefined;
-      if (updateStatus) this.statusWidget.update(ctx, "ok", this.statusValues());
+      if (updateStatus) this.statusWidget.update(ctx, "󰄬");
       await this.trace(`pipe ok state=${this.state.state}`);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
-      if (updateStatus) this.statusWidget.update(ctx, "error", this.statusValues());
+      if (updateStatus) this.statusWidget.update(ctx, "");
       await this.trace(`pipe error state=${this.state.state} error=${this.lastError}`);
     }
   }
@@ -129,7 +118,6 @@ export class ZellijPublisher {
     this.stopRefresh();
     this.refreshTimer = setTimeout(() => {
       void this.publish(ctx, this.state.state, false).finally(() => {
-        this.statusWidget.update(ctx, "refreshing", this.statusValues());
         if (this.state.state !== "shutdown") this.scheduleRefresh(ctx);
       });
     }, REFRESH_MS);
