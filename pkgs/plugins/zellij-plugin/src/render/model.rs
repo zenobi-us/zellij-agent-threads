@@ -29,7 +29,11 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 
 {% endfor -%}
 {% endfor %}
-{% endif -%}"#;
+{% endif -%}
+{% for event in events %}{{ " " | bg("yellow") }}  {{ " %s " | format(event) | fg("yellow")  }}
+{% endfor %}
+
+"#;
 
 /// Render-ready snapshot of runtime state.
 ///
