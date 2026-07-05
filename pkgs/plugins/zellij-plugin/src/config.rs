@@ -56,6 +56,8 @@ pub(crate) struct RenderConfig {
     pub(crate) title: String,
     pub(crate) empty_message: String,
     pub(crate) template: String,
+    pub(crate) template_dir: Option<String>,
+    pub(crate) template_name: String,
 }
 
 impl Default for RenderConfig {
@@ -65,6 +67,8 @@ impl Default for RenderConfig {
             title: "zellij-agent".into(),
             empty_message: "waiting for pi extension reports".into(),
             template: crate::render::DEFAULT_TEMPLATE.into(),
+            template_dir: None,
+            template_name: "main.j2".into(),
         }
     }
 }
@@ -87,6 +91,11 @@ impl RenderConfig {
                 .get("template")
                 .cloned()
                 .unwrap_or(default.template),
+            template_dir: configuration.get("template_dir").cloned(),
+            template_name: configuration
+                .get("template_name")
+                .cloned()
+                .unwrap_or(default.template_name),
         }
     }
 }
@@ -116,8 +125,24 @@ mod tests {
         assert_eq!(config.render.title, "agents");
         assert_eq!(config.render.empty_message, "none");
         assert_eq!(config.render.template, "{{ status }}");
+        assert_eq!(config.render.template_dir, None);
+        assert_eq!(config.render.template_name, "main.j2");
         assert_eq!(config.collapsed_cols, 6);
         assert_eq!(config.expanded_cols, 30);
+    }
+
+    #[test]
+    fn parses_template_loader_config() {
+        let config = PluginConfig::parse(&BTreeMap::from([
+            ("template_dir".into(), "/tmp/templates".into()),
+            ("template_name".into(), "agent.j2".into()),
+        ]));
+
+        assert_eq!(
+            config.render.template_dir.as_deref(),
+            Some("/tmp/templates")
+        );
+        assert_eq!(config.render.template_name, "agent.j2");
     }
 
     #[test]

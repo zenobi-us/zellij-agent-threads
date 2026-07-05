@@ -1,4 +1,4 @@
-use minijinja::Environment;
+use minijinja::{path_loader, Environment};
 
 use super::click::{collect_hitboxes, Hitbox};
 use super::filters::add_template_helpers;
@@ -9,8 +9,15 @@ pub(super) fn render_template(
 ) -> Result<(String, Vec<Hitbox>), minijinja::Error> {
     let mut env = Environment::new();
     add_template_helpers(&mut env);
-    let captured = env
-        .template_from_str(&model.template)?
-        .render_captured(model)?;
+
+    let captured = if let Some(template_dir) = &model.template_dir {
+        env.set_loader(path_loader(template_dir));
+        env.get_template(&model.template_name)?
+            .render_captured(model)?
+    } else {
+        env.template_from_str(&model.template)?
+            .render_captured(model)?
+    };
+
     Ok(collect_hitboxes(captured.state(), captured.output()))
 }

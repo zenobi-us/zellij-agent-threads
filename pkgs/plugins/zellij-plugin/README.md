@@ -28,3 +28,16 @@ Host-target tests are used because raw `.wasm` test binaries do not execute dire
 ```text
 zellij-agent-threads
 ```
+
+## Template files
+
+Inline `template` config still works. For `{% include %}` / `{% import %}`, load templates from disk:
+
+```kdl
+plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
+    template_dir "/home/q/.config/zellij-agent-threads/templates"
+    template_name "main.j2"
+}
+```
+
+`template_name` defaults to `main.j2`. Disk templates request Zellij `FullHdAccess`.

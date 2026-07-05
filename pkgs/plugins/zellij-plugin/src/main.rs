@@ -28,11 +28,15 @@ impl ZellijPlugin for PluginState {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = PluginConfig::parse(&configuration);
         set_selectable(true);
-        request_permission(&[
+        let mut permissions = vec![
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
             PermissionType::MessageAndLaunchOtherPlugins,
-        ]);
+        ];
+        if self.config.render.template_dir.is_some() {
+            permissions.push(PermissionType::FullHdAccess);
+        }
+        request_permission(&permissions);
         subscribe(&[
             EventType::Mouse,
             EventType::PaneClosed,

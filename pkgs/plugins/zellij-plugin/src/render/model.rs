@@ -46,6 +46,8 @@ pub(crate) struct RenderModel {
     pub(super) groups: Vec<TabGroup>,
     pub(super) events: Vec<String>,
     pub(super) template: String,
+    pub(super) template_dir: Option<String>,
+    pub(super) template_name: String,
     pub(super) has_error: bool,
     pub(super) last_error: String,
 }
@@ -128,6 +130,8 @@ impl RenderModel {
             groups: groups.into_values().collect(),
             events: state.events.iter().rev().cloned().collect(),
             template: config.template.clone(),
+            template_dir: config.template_dir.clone(),
+            template_name: config.template_name.clone(),
             has_error: state.last_error.is_some(),
             last_error: state.last_error.clone().unwrap_or_default(),
         }

@@ -158,4 +158,36 @@ mod tests {
         assert_eq!(rendered, "Agents");
         assert_eq!(hitboxes[0].action, ClickAction::SwitchTab { tab: 7 });
     }
+
+    #[test]
+    fn renders_templates_loaded_from_disk_with_include_and_import() {
+        let dir = std::env::temp_dir().join(format!(
+            "zellij-agent-threads-template-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.j2"),
+            "{% import \"macros.j2\" as ui %}{% include \"header.j2\" %} {{ ui.empty(empty_message) }}",
+        )
+        .unwrap();
+        std::fs::write(dir.join("header.j2"), "Header").unwrap();
+        std::fs::write(
+            dir.join("macros.j2"),
+            "{% macro empty(message) %}{{ message | upper }}{% endmacro %}",
+        )
+        .unwrap();
+
+        let mut config = RenderConfig::default();
+        config.template_dir = Some(dir.display().to_string());
+        let model = RenderModel::from_runtime(&RuntimeState::default(), &config);
+
+        assert_eq!(
+            render_template(&model).unwrap().0,
+            "Header WAITING FOR PI EXTENSION REPORTS"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
