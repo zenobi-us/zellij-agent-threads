@@ -32,6 +32,7 @@ impl ZellijPlugin for PluginState {
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
             PermissionType::MessageAndLaunchOtherPlugins,
+            PermissionType::ReadCliPipes,
         ];
         if self.config.render.template_dir.is_some() {
             permissions.push(PermissionType::FullHdAccess);
