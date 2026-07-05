@@ -23,7 +23,7 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
      {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
     {{ focus_style(agent | bold, session.focused) }}
     {{ session.title | bold if session.focused else session.title | dim }}
-    {{ session.cwd | bold if session.focused else session.cwd | dim }}
+     {{ session.cwd | bold if session.focused else session.cwd | dim }}
     {% if session.state == "running" -%}{{ session.current_task | bold if session.focused else session.current_task | dim }}{%- endif %}
 {%- endcall %}
 
