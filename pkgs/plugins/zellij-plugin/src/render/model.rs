@@ -16,16 +16,16 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | dim }}{%- endcall %}
 
 {% for session in group.sessions -%}
-     {% call PaneButton(pane=session.pane) -%}
-     {% set title = " %s " | format(session.title) -%}
-     {{ "%3s" | format(session.pane) | bold if session.focused else "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "󱉺", "idle": "⏸️" }) | fg("green") if session.state == "running" else session.state | remap({ "running": "🏃", "idle": "⏸️" }) | dim }} {{ title | bold if session.focused else title | dim if not session.active_tab else title }}
-     {{ "🍱 %s" | format(session.model) | dim }}
-     {{ "📁 %s" | format(session.cwd) | dim }}
-     {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
-     {%- endcall %}
+{% call PaneButton(pane=session.pane) -%}
+     {%- set icon = session.state | remap({ "running": "󱉺", "idle": "󰏧" }) -%}
+     {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
+     {{ agent | fg("blue") if session.focused else agent | dim }}
+     {{ session.title | dim if not session.focused else session.title  }}
+     {{ session.cwd | dim if not session.focused else session.cwd }}
+     {% if session.state == "running" -%}{{ session.current_task }}{%- endif %}
+{%- endcall %}
 
 {% endfor -%}
-
 {% endfor %}
 {% endif -%}"#;
 
