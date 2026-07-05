@@ -1,5 +1,8 @@
 # zellij-agent-threads
 
+<img width="2750" height="1159" alt="image" src="https://github.com/user-attachments/assets/3c2ceb3f-d714-4a8b-9f3f-5b86fc4aef88" />
+
+
 Moon + proto monorepo for the Zellij agent thread plugin and Pi extension.
 
 ## Projects
