@@ -160,8 +160,7 @@ export class ZellijPublisher {
       child.on("error", () => resolve(undefined));
       child.on("exit", (code) => {
         if (code !== 0) return resolve(undefined);
-        const panes = JSON.parse(stdout) as PaneTabInfo[];
-        resolve(panes.find((pane) => !pane.is_plugin && String(pane.id) === paneId));
+        resolve(parsePaneTabInfo(stdout, paneId));
       });
     });
   }
@@ -190,5 +189,16 @@ export class ZellijPublisher {
    */
   private async trace(message: string): Promise<void> {
     await appendFile(LOG_FILE, `${new Date().toISOString()} ${message}\n`);
+  }
+}
+
+
+export function parsePaneTabInfo(stdout: string, paneId: string | undefined): PaneTabInfo | undefined {
+  if (!paneId || !stdout.trim()) return undefined;
+  try {
+    const panes = JSON.parse(stdout) as PaneTabInfo[];
+    return panes.find((pane) => !pane.is_plugin && String(pane.id) === paneId);
+  } catch {
+    return undefined;
   }
 }
