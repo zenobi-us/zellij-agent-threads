@@ -42,6 +42,7 @@ impl ZellijPlugin for PluginState {
             EventType::PaneClosed,
             EventType::PaneUpdate,
             EventType::TabUpdate,
+            EventType::SessionUpdate,
             EventType::PermissionRequestResult,
         ]);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
@@ -114,6 +115,7 @@ impl ZellijPlugin for PluginState {
                 };
                 tab_changed || focus_changed
             }
+            Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
             Event::PermissionRequestResult(_) => {
                 set_selectable(false);
                 true

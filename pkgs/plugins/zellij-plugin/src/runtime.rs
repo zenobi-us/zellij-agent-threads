@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
-use zellij_tile::prelude::{PaneId, PipeMessage};
+use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
 /// Name of the Zellij pipe that receives Pi agent session reports.
 pub(crate) const PIPE_NAME: &str = "zellij-agent-threads";
@@ -28,6 +28,7 @@ pub(crate) struct RuntimeState {
     pub(crate) focused_pane: Option<String>,
     pub(crate) active_tab: Option<usize>,
     pub(crate) active_tab_position: Option<usize>,
+    pub(crate) zellij_session: Option<String>,
 }
 
 impl RuntimeState {
@@ -73,6 +74,18 @@ impl RuntimeState {
         }
         self.active_tab = active_tab;
         self.active_tab_position = active_position;
+        true
+    }
+
+    pub(crate) fn sync_current_session(&mut self, sessions: &[SessionInfo]) -> bool {
+        let current = sessions
+            .iter()
+            .find(|session| session.is_current_session)
+            .map(|session| session.name.clone());
+        if self.zellij_session == current {
+            return false;
+        }
+        self.zellij_session = current;
         true
     }
 
@@ -357,6 +370,27 @@ mod tests {
             runtime.sessions["1"].zellij_session.as_deref(),
             Some("renamed")
         );
+    }
+
+    #[test]
+    fn current_session_rename_requests_render() {
+        let mut runtime = RuntimeState::default();
+        let sessions = vec![zellij_tile::prelude::SessionInfo {
+            name: "old".into(),
+            is_current_session: true,
+            ..Default::default()
+        }];
+        assert!(runtime.sync_current_session(&sessions));
+        assert_eq!(runtime.zellij_session.as_deref(), Some("old"));
+        assert!(!runtime.sync_current_session(&sessions));
+
+        let renamed = vec![zellij_tile::prelude::SessionInfo {
+            name: "new".into(),
+            is_current_session: true,
+            ..Default::default()
+        }];
+        assert!(runtime.sync_current_session(&renamed));
+        assert_eq!(runtime.zellij_session.as_deref(), Some("new"));
     }
 
     #[test]

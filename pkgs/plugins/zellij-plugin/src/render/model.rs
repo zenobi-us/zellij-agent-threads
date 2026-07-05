@@ -91,9 +91,14 @@ impl RenderModel {
             .map(|session| session_line(session, state))
             .collect();
         let zellij_session = state
-            .sessions
-            .values()
-            .find_map(|session| session.zellij_session.clone())
+            .zellij_session
+            .clone()
+            .or_else(|| {
+                state
+                    .sessions
+                    .values()
+                    .find_map(|session| session.zellij_session.clone())
+            })
             .unwrap_or_else(|| "?".into());
         let harness = state
             .sessions
@@ -151,7 +156,11 @@ fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) ->
         pane,
         cwd: basename(&session.cwd).into(),
         model: session.model.clone().unwrap_or_else(|| "?".into()),
-        zellij_session: session.zellij_session.clone().unwrap_or_else(|| "?".into()),
+        zellij_session: state
+            .zellij_session
+            .clone()
+            .or_else(|| session.zellij_session.clone())
+            .unwrap_or_else(|| "?".into()),
         harness: session.harness.clone().unwrap_or_else(|| "?".into()),
         title: session
             .title
@@ -195,8 +204,8 @@ mod tests {
             focused_pane: Some("1".into()),
             active_tab: Some(7),
             active_tab_position: Some(0),
+            zellij_session: None,
         };
-
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
     }
 
@@ -212,7 +221,18 @@ mod tests {
         assert!(model.sessions[0].active_tab);
         assert_eq!(model.sessions[0].zellij_session, "z");
         assert_eq!(model.zellij_session, "z");
+
         assert_eq!(model.sessions[0].harness, "pi");
         assert_eq!(model.harness, "pi");
+    }
+
+    #[test]
+    fn zellij_session_event_name_overrides_stale_pipe_name() {
+        let runtime = RuntimeState {
+            zellij_session: Some("renamed".into()),
+            ..RuntimeState::default()
+        };
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        assert_eq!(model.zellij_session, "renamed");
     }
 }

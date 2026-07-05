@@ -123,6 +123,7 @@ mod tests {
             focused_pane: Some("1".into()),
             active_tab: Some(7),
             active_tab_position: Some(0),
+            zellij_session: None,
         };
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
