@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["index.ts", "config.ts", "status.ts", "zellij.ts"]
+  "include": ["src/**/*.ts"]
 }

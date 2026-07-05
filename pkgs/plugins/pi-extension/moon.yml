@@ -13,7 +13,7 @@ tasks:
     inputs:
       - "package.json"
       - "tsconfig.json"
-      - "index.ts"
+      - "src/**/*.ts"
 
   build:
     deps:
