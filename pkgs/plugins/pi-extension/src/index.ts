@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, loadConfig, type ZellijAgentConfig } from "./config.js";
 import { StatusWidget } from "./status.js";
-import { LOG_FILE, ZellijPublisher } from "./zellij.js";
+import { LogService } from "./log.js";
+import { ZellijPublisher } from "./zellij.js";
 
 const STATUS_KEY = "zellij-agent";
 
@@ -34,7 +35,8 @@ export default function (pi: ExtensionAPI) {
   const defaults = defaultConfig();
   let config: ZellijAgentConfig = defaults;
   let statusWidget = new StatusWidget(STATUS_KEY, defaults.statusBarTemplate);
-  const publisher = new ZellijPublisher(statusWidget);
+  const log = new LogService();
+  const publisher = new ZellijPublisher(statusWidget, log);
 
   /**
    * Rebuilds config-backed services on every session runtime start.
@@ -43,6 +45,8 @@ export default function (pi: ExtensionAPI) {
    */
   pi.on("session_start", async (_event, ctx) => {
     config = await loadConfig(ctx);
+    log.updateSession(ctx);
+    void log.debug(`session_start cwd=${ctx.cwd}`);
     statusWidget = new StatusWidget(STATUS_KEY, config.statusBarTemplate);
     publisher.updateStatusWidget(statusWidget);
     publisher.scheduleRefresh(ctx);
@@ -110,7 +114,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       await publisher.publish(ctx);
       try {
-        if (ctx.hasUI) ctx.ui.notify(`zellij-agent ${statusWidget.lastStatus}; log ${LOG_FILE}`, publisher.lastError ? "warning" : "info");
+        if (ctx.hasUI) ctx.ui.notify(`zellij-agent ${statusWidget.lastStatus}; log ${log.file}`, publisher.lastError ? "warning" : "info");
       } catch {
         // UI should never break command execution.
       }

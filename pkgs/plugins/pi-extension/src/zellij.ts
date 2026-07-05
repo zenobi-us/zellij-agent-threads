@@ -1,11 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { appendFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import type { StatusWidget, StatusValues } from "./status.js";
+import type { LogService } from "./log.js";
 
 export const PIPE_NAME = "zellij-agent-threads";
-export const LOG_FILE = `${tmpdir()}/pi-zellij-agent-${process.getuid?.() ?? "user"}.log`;
 export const REFRESH_MS = 2_000;
 
 export type AgentState = "idle" | "running" | "shutdown";
@@ -39,8 +37,9 @@ export class ZellijPublisher {
 
   constructor(
     private statusWidget: StatusWidget,
+    private log: LogService,
     private state: PublisherState = { state: "idle" },
-  ) { }
+  ) {}
 
   /**
    * Session config can change on reload/resume, so the publisher keeps the same
@@ -49,6 +48,7 @@ export class ZellijPublisher {
   updateStatusWidget(statusWidget: StatusWidget): void {
     this.statusWidget = statusWidget;
   }
+
 
   /**
    * Gives lifecycle hooks one place to mutate publishable state before any pipe
@@ -71,10 +71,11 @@ export class ZellijPublisher {
       const tab = await this.paneTabInfo();
       const paneTitle = tab?.title ?? tab?.name ?? tab?.tab_name;
       this.state.title = paneTitle;
+      const session = this.sessionKey(ctx);
       const payload = JSON.stringify({
         version: 1,
         harness: "pi",
-        session: this.sessionKey(ctx),
+        session,
         cwd: ctx.cwd,
         zellij_session: process.env.ZELLIJ_SESSION_NAME,
         pane_id: process.env.ZELLIJ_PANE_ID,
@@ -87,15 +88,15 @@ export class ZellijPublisher {
         updated_at: Date.now(),
       });
 
-      await this.trace(`publish state=${this.state.state} bytes=${payload.length}`);
+      await this.log.trace(`publish session=${session} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${this.state.state} bytes=${payload.length}`);
       await this.pipeToPlugin(payload);
       this.lastError = undefined;
       if (updateStatus) this.statusWidget.update(ctx, "󰄬");
-      await this.trace(`pipe ok state=${this.state.state}`);
+      await this.log.trace(`pipe ok state=${this.state.state}`);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       if (updateStatus) this.statusWidget.update(ctx, "");
-      await this.trace(`pipe error state=${this.state.state} error=${this.lastError}`);
+      await this.log.trace(`pipe error state=${this.state.state} error=${this.lastError}`);
     }
   }
 
@@ -169,14 +170,6 @@ export class ZellijPublisher {
         else reject(new Error(`zellij pipe failed code=${code} signal=${signal}`));
       });
     });
-  }
-
-  /**
-   * Writes a flat debug trail outside the session file so publish failures remain
-   * inspectable even when the Pi UI cannot render them.
-   */
-  private async trace(message: string): Promise<void> {
-    await appendFile(LOG_FILE, `${new Date().toISOString()} ${message}\n`);
   }
 }
 
