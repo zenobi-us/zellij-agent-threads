@@ -178,6 +178,7 @@ impl RuntimeState {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentSession {
     pub(crate) version: u8,
+    pub(crate) harness: Option<String>,
     pub(crate) session: String,
     pub(crate) cwd: String,
     pub(crate) zellij_session: Option<String>,
@@ -210,6 +211,8 @@ impl AgentSession {
             && self.pane_id == other.pane_id
             && self.tab_id == other.tab_id
             && self.tab_name == other.tab_name
+            && self.zellij_session == other.zellij_session
+            && self.harness == other.harness
             && self.state == other.state
             && self.model == other.model
             && self.title == other.title
@@ -260,6 +263,7 @@ mod tests {
     fn session(session: &str, pane_id: Option<&str>) -> AgentSession {
         AgentSession {
             version: 1,
+            harness: Some("pi".into()),
             session: session.into(),
             cwd: "/tmp".into(),
             pane_id: pane_id.map(str::to_string),
@@ -319,19 +323,32 @@ mod tests {
     }
 
     #[test]
-    fn hidden_field_change_updates_without_render() {
+    fn zellij_session_change_requests_render() {
         let mut runtime = RuntimeState::default();
         let first = session("a", Some("1"));
         assert!(runtime.handle_pipe(pipe_message(first)));
 
         let mut hidden_change = session("a", Some("1"));
         hidden_change.zellij_session = Some("renamed".into());
-        assert!(!runtime.handle_pipe(pipe_message(hidden_change)));
-        assert_eq!(runtime.pipe_count, 1);
+        assert!(runtime.handle_pipe(pipe_message(hidden_change)));
+        assert_eq!(runtime.pipe_count, 2);
         assert_eq!(
             runtime.sessions["1"].zellij_session.as_deref(),
             Some("renamed")
         );
+    }
+
+    #[test]
+    fn harness_change_requests_render() {
+        let mut runtime = RuntimeState::default();
+        let first = session("a", Some("1"));
+        assert!(runtime.handle_pipe(pipe_message(first)));
+
+        let mut harness_change = session("a", Some("1"));
+        harness_change.harness = Some("codex".into());
+        assert!(runtime.handle_pipe(pipe_message(harness_change)));
+        assert_eq!(runtime.pipe_count, 2);
+        assert_eq!(runtime.sessions["1"].harness.as_deref(), Some("codex"));
     }
     #[test]
     fn removes_only_sessions_in_closed_terminal_pane() {

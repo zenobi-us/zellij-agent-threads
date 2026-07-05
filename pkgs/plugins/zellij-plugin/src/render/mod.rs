@@ -101,6 +101,7 @@ mod tests {
                 "s".into(),
                 AgentSession {
                     version: 1,
+                    harness: Some("pi".into()),
                     session: "s".into(),
                     cwd: "/tmp/project".into(),
                     pane_id: Some("1".into()),

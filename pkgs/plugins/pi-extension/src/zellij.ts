@@ -84,6 +84,7 @@ export class ZellijPublisher {
       this.state.title = paneTitle;
       const payload = JSON.stringify({
         version: 1,
+        harness: "pi",
         session: this.sessionKey(ctx),
         cwd: ctx.cwd,
         zellij_session: process.env.ZELLIJ_SESSION_NAME,

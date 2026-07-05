@@ -10,9 +10,11 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% else -%}
 {% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
 {% endif -%}
+{{ " %s " | format(zellij_session) | bg("blue") | fg("white") }}
 {% for group in groups %}
 {% set tab_label = " %s " | format(group.tab_name) -%}
 {% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | dim }}{%- endcall %}
+
 {% for session in group.sessions -%}
      {% call PaneButton(pane=session.pane) -%}
      {% set title = " %s " | format(session.title) -%}
@@ -37,6 +39,8 @@ pub(crate) struct RenderModel {
     pub(crate) collapsed: bool,
     pub(super) empty_message: String,
     pub(super) sessions: Vec<SessionLine>,
+    pub(super) zellij_session: String,
+    pub(super) harness: String,
     pub(super) groups: Vec<TabGroup>,
     pub(super) events: Vec<String>,
     pub(super) template: String,
@@ -63,6 +67,8 @@ pub(super) struct SessionLine {
     cwd: String,
     model: String,
     title: String,
+    zellij_session: String,
+    harness: String,
     current_task: String,
     focused: bool,
     active_tab: bool,
@@ -76,6 +82,16 @@ impl RenderModel {
             .values()
             .map(|session| session_line(session, state))
             .collect();
+        let zellij_session = state
+            .sessions
+            .values()
+            .find_map(|session| session.zellij_session.clone())
+            .unwrap_or_else(|| "?".into());
+        let harness = state
+            .sessions
+            .values()
+            .find_map(|session| session.harness.clone())
+            .unwrap_or_else(|| "?".into());
 
         let mut groups = BTreeMap::<String, TabGroup>::new();
         for session in state.sessions.values() {
@@ -105,6 +121,8 @@ impl RenderModel {
             collapsed: state.collapsed,
             empty_message: config.empty_message.clone(),
             sessions,
+            zellij_session,
+            harness,
             groups: groups.into_values().collect(),
             events: state.events.iter().rev().cloned().collect(),
             template: config.template.clone(),
@@ -123,6 +141,8 @@ fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) ->
         pane,
         cwd: basename(&session.cwd).into(),
         model: session.model.clone().unwrap_or_else(|| "?".into()),
+        zellij_session: session.zellij_session.clone().unwrap_or_else(|| "?".into()),
+        harness: session.harness.clone().unwrap_or_else(|| "?".into()),
         title: session
             .title
             .clone()
@@ -143,6 +163,7 @@ mod tests {
                 "s".into(),
                 AgentSession {
                     version: 1,
+                    harness: Some("pi".into()),
                     session: "s".into(),
                     cwd: "/tmp/project".into(),
                     pane_id: Some("1".into()),
@@ -178,5 +199,9 @@ mod tests {
         assert!(model.groups[0].active);
         assert!(model.sessions[0].focused);
         assert!(model.sessions[0].active_tab);
+        assert_eq!(model.sessions[0].zellij_session, "z");
+        assert_eq!(model.zellij_session, "z");
+        assert_eq!(model.sessions[0].harness, "pi");
+        assert_eq!(model.harness, "pi");
     }
 }
