@@ -13,3 +13,8 @@ This repository is a Moon + proto monorepo for Zellij/Pi agent thread integratio
 - Rust plugin must build for `wasm32-wasip1`.
 - Unit tests run on host target because `.wasm` tests cannot execute directly on Linux without a WASI runner.
 - Pi extension must treat Zellij pipe failures as non-fatal.
+
+## Glossary
+
+- Pane size sync: Rust plugin behavior that keeps multiple plugin panes at the same collapsed or expanded width after one plugin pane is toggled.
+- Zellij layout adapter: concrete Rust code that performs Zellij layout side effects for pane size sync, including resizing plugin panes and sending layout pipe messages to peer plugin instances.
