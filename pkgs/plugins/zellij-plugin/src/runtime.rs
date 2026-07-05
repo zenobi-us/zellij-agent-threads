@@ -27,6 +27,7 @@ pub(crate) struct RuntimeState {
     pub(crate) last_cols: usize,
     pub(crate) focused_pane: Option<String>,
     pub(crate) active_tab: Option<usize>,
+    pub(crate) active_tab_position: Option<usize>,
 }
 
 impl RuntimeState {
@@ -55,12 +56,7 @@ impl RuntimeState {
         &mut self,
         manifest: &zellij_tile::prelude::PaneManifest,
     ) -> bool {
-        let focused = manifest
-            .panes
-            .values()
-            .flat_map(|panes| panes.iter())
-            .find(|pane| pane.is_focused)
-            .map(pane_key);
+        let focused = focused_pane_for_active_tab(manifest, self.active_tab_position).map(pane_key);
         if self.focused_pane == focused {
             return false;
         }
@@ -69,11 +65,14 @@ impl RuntimeState {
     }
 
     pub(crate) fn sync_active_tab(&mut self, tabs: &[zellij_tile::prelude::TabInfo]) -> bool {
-        let active = tabs.iter().find(|tab| tab.active).map(|tab| tab.tab_id);
-        if self.active_tab == active {
+        let active = tabs.iter().find(|tab| tab.active);
+        let active_tab = active.map(|tab| tab.tab_id);
+        let active_position = active.map(|tab| tab.position);
+        if self.active_tab == active_tab && self.active_tab_position == active_position {
             return false;
         }
-        self.active_tab = active;
+        self.active_tab = active_tab;
+        self.active_tab_position = active_position;
         true
     }
 
@@ -254,6 +253,28 @@ fn pane_key(pane: &zellij_tile::prelude::PaneInfo) -> String {
     }
 }
 
+fn focused_pane_for_active_tab(
+    manifest: &zellij_tile::prelude::PaneManifest,
+    active_tab_position: Option<usize>,
+) -> Option<&zellij_tile::prelude::PaneInfo> {
+    if let Some(position) = active_tab_position {
+        return manifest
+            .panes
+            .get(&position)
+            .and_then(|panes| largest_focused_terminal_pane(panes.iter()));
+    }
+
+    largest_focused_terminal_pane(manifest.panes.values().flat_map(|panes| panes.iter()))
+}
+
+fn largest_focused_terminal_pane<'a>(
+    panes: impl Iterator<Item = &'a zellij_tile::prelude::PaneInfo>,
+) -> Option<&'a zellij_tile::prelude::PaneInfo> {
+    panes
+        .filter(|pane| pane.is_focused && !pane.is_plugin)
+        .max_by_key(|pane| pane.pane_content_rows * pane.pane_content_columns)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,7 +399,52 @@ mod tests {
 
         assert!(runtime.sync_pane_focus(&manifest));
         assert_eq!(runtime.focused_pane.as_deref(), Some("7"));
+        assert_eq!(runtime.active_tab_position, None);
         assert!(!runtime.sync_pane_focus(&manifest));
+    }
+
+    #[test]
+    fn tracks_focused_pane_only_from_active_tab() {
+        let mut runtime = RuntimeState {
+            active_tab_position: Some(1),
+            ..RuntimeState::default()
+        };
+        let mut inactive_tab_pane = zellij_tile::prelude::PaneInfo::default();
+        inactive_tab_pane.id = 7;
+        inactive_tab_pane.is_focused = true;
+        let mut active_tab_pane = zellij_tile::prelude::PaneInfo::default();
+        active_tab_pane.id = 8;
+        active_tab_pane.is_focused = true;
+        let manifest = zellij_tile::prelude::PaneManifest {
+            panes: HashMap::from([(0, vec![inactive_tab_pane]), (1, vec![active_tab_pane])]),
+        };
+
+        assert!(runtime.sync_pane_focus(&manifest));
+        assert_eq!(runtime.focused_pane.as_deref(), Some("8"));
+    }
+
+    #[test]
+    fn chooses_largest_focused_pane_when_zellij_marks_multiple_in_active_tab() {
+        let mut runtime = RuntimeState {
+            active_tab_position: Some(0),
+            ..RuntimeState::default()
+        };
+        let mut small = zellij_tile::prelude::PaneInfo::default();
+        small.id = 2;
+        small.is_focused = true;
+        small.pane_content_rows = 1;
+        small.pane_content_columns = 130;
+        let mut large = zellij_tile::prelude::PaneInfo::default();
+        large.id = 9;
+        large.is_focused = true;
+        large.pane_content_rows = 56;
+        large.pane_content_columns = 130;
+        let manifest = zellij_tile::prelude::PaneManifest {
+            panes: HashMap::from([(0, vec![small, large])]),
+        };
+
+        assert!(runtime.sync_pane_focus(&manifest));
+        assert_eq!(runtime.focused_pane.as_deref(), Some("9"));
     }
 
     #[test]
@@ -392,6 +458,7 @@ mod tests {
 
         assert!(runtime.sync_active_tab(&tabs));
         assert_eq!(runtime.active_tab, Some(3));
+        assert_eq!(runtime.active_tab_position, Some(0));
         assert!(!runtime.sync_active_tab(&tabs));
     }
 }

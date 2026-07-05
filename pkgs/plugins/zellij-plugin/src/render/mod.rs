@@ -122,6 +122,7 @@ mod tests {
             last_cols: 0,
             focused_pane: Some("1".into()),
             active_tab: Some(7),
+            active_tab_position: Some(0),
         };
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());

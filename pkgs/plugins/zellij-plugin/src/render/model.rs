@@ -18,7 +18,7 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
 {% for session in group.sessions -%}
      {% call PaneButton(pane=session.pane) -%}
      {% set title = " %s " | format(session.title) -%}
-     {{ "%3s" | format(session.pane) | bold if session.focused else "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "🏃", "idle": "⏸️" }) | fg("green") if session.state == "running" else session.state | remap({ "running": "🏃", "idle": "⏸️" }) | dim }} {{ title | bold if session.focused else title | dim if not session.active_tab else title }}
+     {{ "%3s" | format(session.pane) | bold if session.focused else "%3s" | format(session.pane) }} {{ session.state | remap({ "running": "󱉺", "idle": "⏸️" }) | fg("green") if session.state == "running" else session.state | remap({ "running": "🏃", "idle": "⏸️" }) | dim }} {{ title | bold if session.focused else title | dim if not session.active_tab else title }}
      {{ "🍱 %s" | format(session.model) | dim }}
      {{ "📁 %s" | format(session.cwd) | dim }}
      {% if session.state == "running" %}☑️  {{ session.current_task }}{% endif %}
@@ -184,6 +184,7 @@ mod tests {
             last_cols: 0,
             focused_pane: Some("1".into()),
             active_tab: Some(7),
+            active_tab_position: Some(0),
         };
 
         RenderModel::from_runtime(&runtime, &RenderConfig::default())

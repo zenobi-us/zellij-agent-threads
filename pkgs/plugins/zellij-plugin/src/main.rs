@@ -19,6 +19,7 @@ struct PluginState {
     config: PluginConfig,
     pane_size: PaneSizeService,
     hitboxes: Vec<Hitbox>,
+    last_pane_manifest: Option<PaneManifest>,
 }
 
 register_plugin!(PluginState);
@@ -81,7 +82,7 @@ impl ZellijPlugin for PluginState {
                 }
                 Some(ClickAction::SwitchTab { tab }) => {
                     switch_tab_to(tab);
-                    false
+                    true
                 }
                 Some(ClickAction::FocusPane { pane }) => {
                     if let Some(pane_id) = parse_pane_id(&pane) {
@@ -97,10 +98,18 @@ impl ZellijPlugin for PluginState {
             }
             Event::PaneUpdate(pane_manifest) => {
                 let focus_changed = self.runtime.sync_pane_focus(&pane_manifest);
+                self.last_pane_manifest = Some(pane_manifest.clone());
                 self.pane_size.sync_peers(self.plugin_id, pane_manifest);
                 focus_changed
             }
-            Event::TabUpdate(tabs) => self.runtime.sync_active_tab(&tabs),
+            Event::TabUpdate(tabs) => {
+                let tab_changed = self.runtime.sync_active_tab(&tabs);
+                let focus_changed = match self.last_pane_manifest.as_ref() {
+                    Some(manifest) => self.runtime.sync_pane_focus(manifest),
+                    None => false,
+                };
+                tab_changed || focus_changed
+            }
             Event::PermissionRequestResult(_) => {
                 set_selectable(false);
                 true
