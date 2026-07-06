@@ -6,9 +6,13 @@ use super::model::RenderModel;
 
 pub(super) fn render_template(
     model: &RenderModel,
+    viewport_rows: usize,
+    viewport_cols: usize,
 ) -> Result<(String, Vec<Hitbox>), minijinja::Error> {
     let mut env = Environment::new();
     add_template_helpers(&mut env);
+    env.add_global("viewport_rows", viewport_rows);
+    env.add_global("viewport_cols", viewport_cols);
 
     let captured = if let Some(template_dir) = &model.template_dir {
         env.set_loader(path_loader(template_dir));

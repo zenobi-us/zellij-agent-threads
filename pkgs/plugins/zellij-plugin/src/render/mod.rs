@@ -8,6 +8,8 @@
 mod button;
 mod click;
 mod filters;
+#[path = "grid-layout.rs"]
+mod grid_layout;
 mod model;
 mod template;
 
@@ -38,7 +40,7 @@ impl Renderer {
         clear_plugin_rows(rows, cols);
 
         let button = collapse_button(model.collapsed);
-        let (rendered, mut hitboxes) = render_template(model)
+        let (rendered, mut hitboxes) = render_template(model, rows, cols)
             .unwrap_or_else(|error| (format!("template error: {}", error), Vec::new()));
 
         for (row, line) in rendered.lines().take(rows).enumerate() {
@@ -127,8 +129,11 @@ mod tests {
         };
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
-        assert!(render_template(&model).unwrap().0.contains("project"));
-        let (_, default_hitboxes) = render_template(&model).unwrap();
+        assert!(render_template(&model, 10, 80)
+            .unwrap()
+            .0
+            .contains("project"));
+        let (_, default_hitboxes) = render_template(&model, 10, 80).unwrap();
         assert_eq!(
             default_hitboxes[0].action,
             ClickAction::SwitchTab { tab: 8 }
@@ -138,13 +143,13 @@ mod tests {
         remap_config.template =
             "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into();
         let remap_model = RenderModel::from_runtime(&runtime, &remap_config);
-        assert_eq!(render_template(&remap_model).unwrap().0, "RUN");
+        assert_eq!(render_template(&remap_model, 10, 80).unwrap().0, "RUN");
 
         let mut filter_config = RenderConfig::default();
         filter_config.template =
             "{{ sessions[0].title | pane_button(pane=sessions[0].pane) }}".into();
         let filter_model = RenderModel::from_runtime(&runtime, &filter_config);
-        let (rendered, hitboxes) = render_template(&filter_model).unwrap();
+        let (rendered, hitboxes) = render_template(&filter_model, 10, 80).unwrap();
         assert_eq!(rendered, "First Message Title");
         assert_eq!(
             hitboxes[0].action,
@@ -155,7 +160,7 @@ mod tests {
         call_config.template =
             "{%- call TabButton(tab=7) -%}{{ groups[0].tab_name }}{%- endcall -%}".into();
         let call_model = RenderModel::from_runtime(&runtime, &call_config);
-        let (rendered, hitboxes) = render_template(&call_model).unwrap();
+        let (rendered, hitboxes) = render_template(&call_model, 10, 80).unwrap();
         assert_eq!(rendered, "Agents");
         assert_eq!(hitboxes[0].action, ClickAction::SwitchTab { tab: 7 });
     }
@@ -185,7 +190,7 @@ mod tests {
         let model = RenderModel::from_runtime(&RuntimeState::default(), &config);
 
         assert_eq!(
-            render_template(&model).unwrap().0,
+            render_template(&model, 10, 80).unwrap().0,
             "Header WAITING FOR PI EXTENSION REPORTS"
         );
 

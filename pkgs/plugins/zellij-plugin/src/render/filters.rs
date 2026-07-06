@@ -27,10 +27,12 @@ fn style(value: Value, code: u8) -> Value {
 }
 
 use super::click::add_button_functions;
+use super::grid_layout::add_grid_layout_functions;
 
 pub(super) fn add_template_helpers(env: &mut Environment<'_>) {
     add_filters(env);
     add_button_functions(env);
+    add_grid_layout_functions(env);
 }
 
 fn remap(value: Value, mapping: Value) -> Result<Value, Error> {

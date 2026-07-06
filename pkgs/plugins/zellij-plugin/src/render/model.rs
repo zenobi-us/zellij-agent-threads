@@ -5,12 +5,9 @@ use serde::Serialize;
 use crate::config::RenderConfig;
 use crate::runtime::{basename, state_label, RuntimeState};
 
-pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
-  0 Agents
-{% else -%}
-{% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
-{% endif -%}
-{{ " %s " | format(zellij_session) | bg("yellow") | fg("black") }}
+pub(crate) const DEFAULT_TEMPLATE: &str = r#"{{ " %s " | format(zellij_session) | bg("yellow") | fg("black") }}
+{% call Flex(direction="column", grow=true, gap=0, weights="1,0", paddingY=2) -%}
+{% if sessions | length > 0 -%}
 {% macro indicator(focused) -%}{{ " " | bg("blue") | fg("black") if focused else " " }}{%- endmacro %}
 {% macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro %}
 {% for group in groups %}
@@ -22,18 +19,20 @@ pub(crate) const DEFAULT_TEMPLATE: &str = r#"{% if sessions | length == 0 -%}
     {%- set icon = session.state | remap({ "running": "󱉺", "idle": "󰏧" }) -%}
     {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
 {{ indicator(session.focused) }} {{ t(agent | bold, session.focused) }}
-{{ indicator(session.focused) }}  󰆈 {{ session.title | bold if session.focused else session.title | dim }}
-{{ indicator(session.focused) }}   {{ session.cwd | bold if session.focused else session.cwd | dim }}
+{{ indicator(session.focused) }}     󰆈 {{ session.title | bold if session.focused else session.title | dim }}
+{{ indicator(session.focused) }}      {{ session.cwd | bold if session.focused else session.cwd | dim }}
 {% if session.state == "running" -%}{{ indicator(session.focused) }}  {{ session.current_task | bold if session.focused else session.current_task | dim }}{%- endif %}
 {%- endcall %}
 
 {% endfor -%}
 {% endfor %}
+---
+{% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
 {% endif -%}
 {% for event in events %}{{ " " | bg("yellow") }}  {{ " %s " | format(event) | fg("yellow")  }}
 {% endfor %}
-
-"#;
+{% endif -%}
+{%- endcall %}"#;
 
 /// Render-ready snapshot of runtime state.
 ///
