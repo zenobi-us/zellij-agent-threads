@@ -19,6 +19,7 @@ on:
 permissions:
   id-token: write
   contents: write
+  pages: write
   packages: write
 
 concurrency:
