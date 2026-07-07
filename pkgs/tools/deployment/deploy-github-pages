@@ -204,9 +204,11 @@ fi
 
 if [ -n "${token}" ]; then
   if gh api "repos/${repo}/pages" >/dev/null 2>&1; then
-    gh api --method PUT "repos/${repo}/pages" -f "source[branch]=${branch}" -f "source[path]=${pages_path}" >/dev/null
+    gh api --method PUT "repos/${repo}/pages" -f "source[branch]=${branch}" -f "source[path]=${pages_path}" >/dev/null \
+      || warn "GitHub Pages API config failed; published branch anyway"
   else
-    gh api --method POST "repos/${repo}/pages" -f "source[branch]=${branch}" -f "source[path]=${pages_path}" >/dev/null
+    gh api --method POST "repos/${repo}/pages" -f "source[branch]=${branch}" -f "source[path]=${pages_path}" >/dev/null \
+      || warn "GitHub Pages API config failed; published branch anyway"
   fi
 else
   warn "skipping GitHub Pages API config; set token if Pages is not already configured"
