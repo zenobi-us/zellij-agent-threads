@@ -103,7 +103,7 @@ jobs:
           PUBLISH_TAG: ${{ env.PUBLISH_TAG }}
         run: |
           set -euo pipefail
-          moon run ${PUBLISH_TARGET}:publish
+          moon run ${PUBLISH_TARGET}:publish --force
       - name: Publish summary
         if: always()
         run: |
