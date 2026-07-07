@@ -47,7 +47,7 @@ moon_query_to_project_map() {
       continue
     fi
 
-    if ! jq -e '.private != true and (.publishConfig.access // "") != ""' "${package_file}" >/dev/null; then
+    if ! jq -e '(.name // "") != ""' "${package_file}" >/dev/null; then
       continue
     fi
 

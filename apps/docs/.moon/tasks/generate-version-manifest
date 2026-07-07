@@ -28,7 +28,7 @@ node -e '
 
   const data = {
     generatedAt: new Date().toISOString(),
-    repository: process.env.GITHUB_REPOSITORY || "boxfiles/boxfiles",
+    repository: process.env.GITHUB_REPOSITORY || "zenobi-us/zellij-agent-threads",
     ref: process.env.GITHUB_REF || childProcess.execFileSync("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim(),
     sha: fallbackSha,
     channel: process.env.PUBLISH_TAG || null,

@@ -9,8 +9,8 @@
       "group": "application",
       "release-type": "node"
     },
-    "pkgs/plugins/pi-extension-zellij-threads": {
-      "group": "plugin",
+    "pkgs/plugins/pi-extension": {
+      "group": "library",
       "release-type": "node"
     }
   },
