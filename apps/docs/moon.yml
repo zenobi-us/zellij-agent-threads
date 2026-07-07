@@ -76,6 +76,7 @@ tasks:
     dependsOn: ["build"]
     options:
       cache: false
+      runInCI: true
     script: |
       "${MOON_WORKSPACE_ROOT}/pkgs/tools/deployment/deploy-github-pages" \
         --source "${MOON_PROJECT_ROOT}/dist/public" \
