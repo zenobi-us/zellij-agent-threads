@@ -1,0 +1,1 @@
+function e(e,t){return e.endsWith(`/`)&&(e=e.slice(0,-1)),t.startsWith(`/`)&&(t=t.slice(1)),`${e}/${t}`}export{e as t};

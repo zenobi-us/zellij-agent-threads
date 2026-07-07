@@ -1,0 +1,4 @@
+# Docs
+
+- [Why Zellij Agent Threads](/why): Why Zellij Agent Threads exists: a Zellij panel for tracking agent sessions across panes and tabs.
+- [Quickstart](/quickstart): Create a workspace, write a manifest, and run Boxfiles.

@@ -1,6 +1,0 @@
-{
-  "packages": {
-    "apps/web": { "release-type": "node" },
-    "pkgs/libs/ui": { "release-type": "node" }
-  }
-}
