@@ -8,5 +8,5 @@ projects:
     - "pkgs/tools/*"
 
 vcs:
-  defaultBranch: "master"
+  defaultBranch: "main"
   provider: "github"
