@@ -3,12 +3,10 @@ use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
 mod config;
-mod pane_size;
 mod render;
 mod runtime;
 
 use config::PluginConfig;
-use pane_size::{PaneSizeConfig, PaneSizeService, ZellijLayoutAdapter};
 use render::{hitbox_at, ClickAction, Hitbox, RenderModel, Renderer};
 use runtime::RuntimeState;
 
@@ -17,7 +15,6 @@ struct PluginState {
     runtime: RuntimeState,
     plugin_id: Option<u32>,
     config: PluginConfig,
-    pane_size: PaneSizeService,
     hitboxes: Vec<Hitbox>,
     last_pane_manifest: Option<PaneManifest>,
 }
@@ -31,7 +28,6 @@ impl ZellijPlugin for PluginState {
         let mut permissions = vec![
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
-            PermissionType::MessageAndLaunchOtherPlugins,
             PermissionType::ReadCliPipes,
         ];
         if self.config.render.template_dir.is_some() {
@@ -47,28 +43,15 @@ impl ZellijPlugin for PluginState {
             EventType::PermissionRequestResult,
         ]);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
-        self.pane_size = PaneSizeService::new(PaneSizeConfig {
-            collapsed_cols: self.config.collapsed_cols,
-            expanded_cols: self.config.expanded_cols,
-        });
         self.runtime.load();
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        if let Some(update) =
-            self.pane_size
-                .handle_pipe(&pipe_message, self.plugin_id, self.runtime.last_cols)
-        {
-            self.runtime.set_collapsed(update.collapsed);
-            ZellijLayoutAdapter::apply(update.effects);
-            return true;
-        }
         self.runtime.handle_pipe(pipe_message)
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
         self.runtime.set_last_cols(cols);
-        self.pane_size.set_current_cols(cols);
         let model = RenderModel::from_runtime(&self.runtime, &self.config.render);
         self.hitboxes = Renderer::render(&model, rows, cols);
     }
@@ -76,16 +59,6 @@ impl ZellijPlugin for PluginState {
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::Mouse(Mouse::LeftClick(row, col)) => match hitbox_at(&self.hitboxes, row, col) {
-                Some(ClickAction::ToggleCollapse) => {
-                    let should_be_collapsed = self.runtime.toggle_collapsed();
-                    let effects = self.pane_size.local_toggle(
-                        self.plugin_id,
-                        should_be_collapsed,
-                        self.runtime.last_cols,
-                    );
-                    ZellijLayoutAdapter::apply(effects);
-                    true
-                }
                 Some(ClickAction::SwitchTab { tab }) => {
                     switch_tab_to(tab);
                     true
@@ -105,7 +78,6 @@ impl ZellijPlugin for PluginState {
             Event::PaneUpdate(pane_manifest) => {
                 let focus_changed = self.runtime.sync_pane_focus(&pane_manifest);
                 self.last_pane_manifest = Some(pane_manifest.clone());
-                self.pane_size.sync_peers(self.plugin_id, pane_manifest);
                 focus_changed
             }
             Event::TabUpdate(tabs) => {

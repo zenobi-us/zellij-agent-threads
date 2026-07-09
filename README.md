@@ -64,13 +64,6 @@ moon run docs:dev
                                                         |          |
                                 tab button: switch_tab -+          |
                                pane button: focus_pane ------------+
-                               collapse button: toggle
-                                                        |
-                                                        v
-+------------------+   pipe:zellij-agent-threads-layout +------------------+
-| PaneSizeService  | <-------------------------------> | peer plugin panes|
-| resize protocol  |                                  | same plugin URL  |
-+------------------+                                  +------------------+
 ```
 
-Render-impacting session changes request repaint; hidden-field-only updates still refresh stored state without repaint. Shutdown reports and `PaneClosed` events remove stale sessions. Collapse state is synchronized between matching plugin panes through `zellij-agent-threads-layout` control messages.
+Render-impacting session changes request repaint; hidden-field-only updates still refresh stored state without repaint. Shutdown reports and `PaneClosed` events remove stale sessions.

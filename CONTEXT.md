@@ -16,5 +16,4 @@ This repository is a Moon + proto monorepo for Zellij/Pi agent thread integratio
 
 ## Glossary
 
-- Pane size sync: Rust plugin behavior that keeps multiple plugin panes at the same collapsed or expanded width after one plugin pane is toggled.
-- Zellij layout adapter: concrete Rust code that performs Zellij layout side effects for pane size sync, including resizing plugin panes and sending layout pipe messages to peer plugin instances.
+- Template button: rendered text that maps click hitboxes to Zellij actions such as focusing panes or switching tabs.

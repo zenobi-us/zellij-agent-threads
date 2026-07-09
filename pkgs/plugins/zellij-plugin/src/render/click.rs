@@ -9,7 +9,6 @@ const BUTTON_END: &str = "\u{E000}E";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClickAction {
-    ToggleCollapse,
     SwitchTab { tab: u32 },
     FocusPane { pane: String },
 }
@@ -206,7 +205,8 @@ mod tests {
         let input = format!("x{BUTTON_START}0{MARKER_END}abc{BUTTON_END}0{MARKER_END}y");
 
         let mut active = None;
-        let (clean, hitboxes) = strip_line_markers(2, &input, &[action.clone()], &mut active);
+        let (clean, hitboxes) =
+            strip_line_markers(2, &input, std::slice::from_ref(&action), &mut active);
 
         assert_eq!(clean, "xabcy");
         assert_eq!(
@@ -227,7 +227,8 @@ mod tests {
             format!("{BUTTON_START}0{MARKER_END}\u{1b}[31mred\u{1b}[0m{BUTTON_END}0{MARKER_END}");
 
         let mut active = None;
-        let (clean, hitboxes) = strip_line_markers(0, &input, &[action.clone()], &mut active);
+        let (clean, hitboxes) =
+            strip_line_markers(0, &input, std::slice::from_ref(&action), &mut active);
 
         assert_eq!(clean, "\u{1b}[31mred\u{1b}[0m");
         assert_eq!(hitboxes[0].start_col, 0);

@@ -16,8 +16,6 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PluginConfig {
     pub(crate) render: RenderConfig,
-    pub(crate) collapsed_cols: usize,
-    pub(crate) expanded_cols: usize,
 }
 
 impl Default for PluginConfig {
@@ -25,8 +23,6 @@ impl Default for PluginConfig {
     fn default() -> Self {
         Self {
             render: RenderConfig::default(),
-            collapsed_cols: 8,
-            expanded_cols: 16,
         }
     }
 }
@@ -38,11 +34,8 @@ impl PluginConfig {
     /// prevent Pi or Zellij from starting; it should degrade to the same behavior
     /// users get with no config.
     pub(crate) fn parse(configuration: &BTreeMap<String, String>) -> Self {
-        let default = Self::default();
         Self {
             render: RenderConfig::parse(configuration),
-            collapsed_cols: parse_usize(configuration, "collapsed_cols", default.collapsed_cols),
-            expanded_cols: parse_usize(configuration, "expanded_cols", default.expanded_cols),
         }
     }
 }
@@ -100,14 +93,6 @@ impl RenderConfig {
     }
 }
 
-/// Parses a `usize` config value, returning `default` when the key is absent or invalid.
-fn parse_usize(configuration: &BTreeMap<String, String>, key: &str, default: usize) -> usize {
-    configuration
-        .get(key)
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,8 +102,6 @@ mod tests {
         let config = PluginConfig::parse(&BTreeMap::from([
             ("title".into(), "agents".into()),
             ("empty_message".into(), "none".into()),
-            ("collapsed_cols".into(), "6".into()),
-            ("expanded_cols".into(), "30".into()),
             ("template".into(), "{{ status }}".into()),
         ]));
 
@@ -127,8 +110,6 @@ mod tests {
         assert_eq!(config.render.template, "{{ status }}");
         assert_eq!(config.render.template_dir, None);
         assert_eq!(config.render.template_name, "main.j2");
-        assert_eq!(config.collapsed_cols, 6);
-        assert_eq!(config.expanded_cols, 30);
     }
 
     #[test]
@@ -143,19 +124,5 @@ mod tests {
             Some("/tmp/templates")
         );
         assert_eq!(config.render.template_name, "agent.j2");
-    }
-
-    #[test]
-    fn invalid_widths_fall_back_to_default() {
-        let config = PluginConfig::parse(&BTreeMap::from([
-            ("collapsed_cols".into(), "bad".into()),
-            ("expanded_cols".into(), "also-bad".into()),
-        ]));
-
-        assert_eq!(
-            config.collapsed_cols,
-            PluginConfig::default().collapsed_cols
-        );
-        assert_eq!(config.expanded_cols, PluginConfig::default().expanded_cols);
     }
 }

@@ -191,9 +191,9 @@ fn apply_padding(rendered: String, padding: Padding) -> String {
 
     let x = " ".repeat(padding.x);
     let mut lines = Vec::new();
-    lines.extend(std::iter::repeat(String::new()).take(padding.y));
+    lines.extend(std::iter::repeat_n(String::new(), padding.y));
     lines.extend(rendered.lines().map(|line| format!("{x}{line}{x}")));
-    lines.extend(std::iter::repeat(String::new()).take(padding.y));
+    lines.extend(std::iter::repeat_n(String::new(), padding.y));
     lines.join("\n")
 }
 
@@ -301,14 +301,15 @@ fn join_column(cells: &[String], heights: Vec<usize>, gap: usize) -> String {
     let mut lines = Vec::new();
     for (idx, cell) in cells.iter().enumerate() {
         if idx > 0 {
-            lines.extend(std::iter::repeat(String::new()).take(gap));
+            lines.extend(std::iter::repeat_n(String::new(), gap));
         }
         let cell_lines: Vec<_> = cell.lines().map(str::to_string).collect();
         let cell_height = cell_lines.len().max(1);
         lines.extend(cell_lines);
-        lines.extend(
-            std::iter::repeat(String::new()).take(heights[idx].saturating_sub(cell_height)),
-        );
+        lines.extend(std::iter::repeat_n(
+            String::new(),
+            heights[idx].saturating_sub(cell_height),
+        ));
     }
     lines.join("\n").trim_end().to_string()
 }

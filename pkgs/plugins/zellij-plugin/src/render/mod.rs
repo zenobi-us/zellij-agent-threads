@@ -5,7 +5,6 @@
 //! This keeps UX decisions testable even though Zellij drawing itself is a host
 //! side effect.
 
-mod button;
 mod click;
 mod filters;
 #[path = "grid-layout.rs"]
@@ -18,7 +17,6 @@ pub(crate) use model::{RenderModel, DEFAULT_TEMPLATE};
 
 use zellij_tile::prelude::*;
 
-use button::{collapse_button, print_button};
 use template::render_template;
 
 /// Paints a [`RenderModel`] into the Zellij plugin pane.
@@ -39,25 +37,13 @@ impl Renderer {
 
         clear_plugin_rows(rows, cols);
 
-        let button = collapse_button(model.collapsed);
-        let (rendered, mut hitboxes) = render_template(model, rows, cols)
+        let (rendered, hitboxes) = render_template(model, rows, cols)
             .unwrap_or_else(|error| (format!("template error: {}", error), Vec::new()));
 
         for (row, line) in rendered.lines().take(rows).enumerate() {
-            let line_cols = if row == 0 {
-                cols.saturating_sub(button.len() + 1)
-            } else {
-                cols
-            };
+            let line_cols = cols;
             print_line(row, line_cols, line);
         }
-        print_button(0, cols, button);
-        hitboxes.push(Hitbox {
-            row: 0,
-            start_col: cols.saturating_sub(button.len()),
-            end_col: cols,
-            action: ClickAction::ToggleCollapse,
-        });
         hitboxes
     }
 }
@@ -120,7 +106,6 @@ mod tests {
             events: VecDeque::from(["old".into(), "new".into()]),
             pipe_count: 2,
             last_error: None,
-            collapsed: false,
             last_cols: 0,
             focused_pane: Some("1".into()),
             active_tab: Some(7),
@@ -139,15 +124,17 @@ mod tests {
             ClickAction::SwitchTab { tab: 8 }
         );
 
-        let mut remap_config = RenderConfig::default();
-        remap_config.template =
-            "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into();
+        let remap_config = RenderConfig {
+            template: "{{ sessions[0].state | trim | remap({\"running\": \"RUN\"}) }}".into(),
+            ..RenderConfig::default()
+        };
         let remap_model = RenderModel::from_runtime(&runtime, &remap_config);
         assert_eq!(render_template(&remap_model, 10, 80).unwrap().0, "RUN");
 
-        let mut filter_config = RenderConfig::default();
-        filter_config.template =
-            "{{ sessions[0].title | pane_button(pane=sessions[0].pane) }}".into();
+        let filter_config = RenderConfig {
+            template: "{{ sessions[0].title | pane_button(pane=sessions[0].pane) }}".into(),
+            ..RenderConfig::default()
+        };
         let filter_model = RenderModel::from_runtime(&runtime, &filter_config);
         let (rendered, hitboxes) = render_template(&filter_model, 10, 80).unwrap();
         assert_eq!(rendered, "First Message Title");
@@ -156,13 +143,47 @@ mod tests {
             ClickAction::FocusPane { pane: "1".into() }
         );
 
-        let mut call_config = RenderConfig::default();
-        call_config.template =
-            "{%- call TabButton(tab=7) -%}{{ groups[0].tab_name }}{%- endcall -%}".into();
+        let call_config = RenderConfig {
+            template: "{%- call TabButton(tab=7) -%}{{ groups[0].tab_name }}{%- endcall -%}".into(),
+            ..RenderConfig::default()
+        };
         let call_model = RenderModel::from_runtime(&runtime, &call_config);
         let (rendered, hitboxes) = render_template(&call_model, 10, 80).unwrap();
         assert_eq!(rendered, "Agents");
         assert_eq!(hitboxes[0].action, ClickAction::SwitchTab { tab: 7 });
+    }
+
+    #[test]
+    fn default_template_renders_sessions_without_tab_id() {
+        let runtime = RuntimeState {
+            sessions: BTreeMap::from([(
+                "s".into(),
+                AgentSession {
+                    version: 1,
+                    harness: Some("pi".into()),
+                    session: "s".into(),
+                    cwd: "/tmp/project".into(),
+                    pane_id: Some("1".into()),
+                    tab_id: None,
+                    tab_name: Some("Agents".into()),
+                    zellij_session: Some("z".into()),
+                    state: AgentState::Idle,
+                    model: Some("m".into()),
+                    title: Some("First Message Title".into()),
+                    current_task: None,
+                    updated_at: 0,
+                },
+            )]),
+            ..RuntimeState::default()
+        };
+
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        let (rendered, hitboxes) = render_template(&model, 10, 80).unwrap();
+
+        assert!(rendered.contains("Agents"));
+        assert!(!hitboxes
+            .iter()
+            .any(|hitbox| matches!(hitbox.action, ClickAction::SwitchTab { .. })));
     }
 
     #[test]
@@ -185,8 +206,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut config = RenderConfig::default();
-        config.template_dir = Some(dir.display().to_string());
+        let config = RenderConfig {
+            template_dir: Some(dir.display().to_string()),
+            ..RenderConfig::default()
+        };
         let model = RenderModel::from_runtime(&RuntimeState::default(), &config);
 
         assert_eq!(

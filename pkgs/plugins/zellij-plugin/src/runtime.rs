@@ -23,7 +23,6 @@ pub(crate) struct RuntimeState {
     pub(crate) events: VecDeque<String>,
     pub(crate) pipe_count: u64,
     pub(crate) last_error: Option<String>,
-    pub(crate) collapsed: bool,
     pub(crate) last_cols: usize,
     pub(crate) focused_pane: Option<String>,
     pub(crate) active_tab: Option<usize>,
@@ -40,17 +39,6 @@ impl RuntimeState {
     /// Stores latest render width so mouse hit testing can use current coordinates.
     pub(crate) fn set_last_cols(&mut self, cols: usize) {
         self.last_cols = cols;
-    }
-
-    /// Toggles collapsed UI state and returns the new value for pane resizing.
-    pub(crate) fn toggle_collapsed(&mut self) -> bool {
-        self.collapsed = !self.collapsed;
-        self.collapsed
-    }
-
-    /// Sets collapsed UI state from cross-plugin layout sync.
-    pub(crate) fn set_collapsed(&mut self, collapsed: bool) {
-        self.collapsed = collapsed;
     }
 
     pub(crate) fn sync_pane_focus(
@@ -407,13 +395,15 @@ mod tests {
     }
     #[test]
     fn removes_only_sessions_in_closed_terminal_pane() {
-        let mut runtime = RuntimeState::default();
-        runtime.sessions = BTreeMap::from([
-            ("a".into(), session("a", Some("1"))),
-            ("b".into(), session("b", Some("terminal_1"))),
-            ("c".into(), session("c", Some("2"))),
-            ("d".into(), session("d", None)),
-        ]);
+        let mut runtime = RuntimeState {
+            sessions: BTreeMap::from([
+                ("a".into(), session("a", Some("1"))),
+                ("b".into(), session("b", Some("terminal_1"))),
+                ("c".into(), session("c", Some("2"))),
+                ("d".into(), session("d", None)),
+            ]),
+            ..RuntimeState::default()
+        };
 
         assert_eq!(runtime.remove_sessions_for_pane(PaneId::Terminal(1)), 2);
         assert_eq!(runtime.sessions.len(), 2);
@@ -424,9 +414,11 @@ mod tests {
     #[test]
     fn tracks_focused_pane_from_manifest() {
         let mut runtime = RuntimeState::default();
-        let mut pane = zellij_tile::prelude::PaneInfo::default();
-        pane.id = 7;
-        pane.is_focused = true;
+        let pane = zellij_tile::prelude::PaneInfo {
+            id: 7,
+            is_focused: true,
+            ..Default::default()
+        };
         let manifest = zellij_tile::prelude::PaneManifest {
             panes: HashMap::from([(0, vec![pane])]),
         };
@@ -443,12 +435,16 @@ mod tests {
             active_tab_position: Some(1),
             ..RuntimeState::default()
         };
-        let mut inactive_tab_pane = zellij_tile::prelude::PaneInfo::default();
-        inactive_tab_pane.id = 7;
-        inactive_tab_pane.is_focused = true;
-        let mut active_tab_pane = zellij_tile::prelude::PaneInfo::default();
-        active_tab_pane.id = 8;
-        active_tab_pane.is_focused = true;
+        let inactive_tab_pane = zellij_tile::prelude::PaneInfo {
+            id: 7,
+            is_focused: true,
+            ..Default::default()
+        };
+        let active_tab_pane = zellij_tile::prelude::PaneInfo {
+            id: 8,
+            is_focused: true,
+            ..Default::default()
+        };
         let manifest = zellij_tile::prelude::PaneManifest {
             panes: HashMap::from([(0, vec![inactive_tab_pane]), (1, vec![active_tab_pane])]),
         };
@@ -463,16 +459,20 @@ mod tests {
             active_tab_position: Some(0),
             ..RuntimeState::default()
         };
-        let mut small = zellij_tile::prelude::PaneInfo::default();
-        small.id = 2;
-        small.is_focused = true;
-        small.pane_content_rows = 1;
-        small.pane_content_columns = 130;
-        let mut large = zellij_tile::prelude::PaneInfo::default();
-        large.id = 9;
-        large.is_focused = true;
-        large.pane_content_rows = 56;
-        large.pane_content_columns = 130;
+        let small = zellij_tile::prelude::PaneInfo {
+            id: 2,
+            is_focused: true,
+            pane_content_rows: 1,
+            pane_content_columns: 130,
+            ..Default::default()
+        };
+        let large = zellij_tile::prelude::PaneInfo {
+            id: 9,
+            is_focused: true,
+            pane_content_rows: 56,
+            pane_content_columns: 130,
+            ..Default::default()
+        };
         let manifest = zellij_tile::prelude::PaneManifest {
             panes: HashMap::from([(0, vec![small, large])]),
         };
