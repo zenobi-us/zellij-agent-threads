@@ -1,69 +1,102 @@
-# zellij-agent-threads
+# Zellij Agent Threads
 
-<img width="2750" height="1159" alt="image" src="https://github.com/user-attachments/assets/3c2ceb3f-d714-4a8b-9f3f-5b86fc4aef88" />
+> ![WARNING]
+> This project is in early development. It is not yet stable and may change
+
+An LLM agent dashboard for Zellij.
+
+Provides a Zellij pane for llm harness sessions that phone home via [Zellij call plugin pipes](https://zellij.dev/documentation/plugin-pipes.html).
+
+It shows agents across tabs and panes, their state, current task, and worktree so you can find
+running work without tab hunting.
+
+Display format is configurable with MiniJinja templates. See [Templates](#templates) below.
 
 
-Moon + proto monorepo for the Zellij agent thread plugin and Pi extension.
+## Install
 
-## Projects
+Requires [Zellij](https://zellij.dev/),
+[Pi](https://github.com/badlogic/pi-mono),
+[proto](https://moonrepo.dev/proto), and [Bun](https://bun.sh/).
 
-- `pkgs/plugins/zellij-plugin` — Rust/WASM Zellij plugin.
-- `pkgs/plugins/pi-extension` — Pi extension that publishes session state through Zellij pipes.
-- `apps/docs` — docs app copied from `boxfiles/boxfiles` as the monorepo docs scaffold.
+Clone repository, install toolchains and dependencies, then build and install
+both integrations:
 
-## Setup
-
-```bash
+```sh
+git clone https://github.com/zenobi-us/zellij-agent-threads.git
+cd zellij-agent-threads
 proto install
 bun install
-moon query projects
+moon run zellij-plugin:install
 ```
 
-## Common tasks
+This builds plugin for `wasm32-wasip1`, copies it to
+`~/.config/zellij/plugins/zellij-agent-threads.wasm`, and links Pi extension at
+`~/.pi/agent/extensions/zellij-agent`.
 
-```bash
-moon run zellij-plugin:build
-moon run zellij-plugin:test
-moon run pi-extension:typecheck
-moon run docs:dev
+Add plugin to Zellij layout:
+
+```kdl
+layout {
+    pane {
+        plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm"
+    }
+}
 ```
 
-## Zellij plugin data flow
+Replace `/home/you` with your home directory. Start Zellij using layout, then
+start Pi in any pane. Agent reports appear in plugin panel automatically.
 
-`pkgs/plugins/zellij-plugin` is a small Zellij lifecycle state machine. Pi publishes JSON session reports to the `zellij-agent-threads` pipe; the plugin stores the latest report per pane/session, folds Zellij pane/tab events into that runtime state, then renders a MiniJinja template into the plugin pane.
+For development, rebuild and reload whenever Rust source changes:
 
-```text
-                 Pi extension / zellij pipe
-                           |
-                           v
-+------------------+   pipe:zellij-agent-threads   +------------------+
-| Zellij lifecycle | ----------------------------> | RuntimeState     |
-| load/pipe/update |                               | sessions/events  |
-+--------+---------+                               +---+----------+---+
-         |                                             |          ^
-         | load: parse config, subscribe, get id        |          |
-         v                                             |          |
-+------------------+                                   |          |
-| PluginConfig     |                                   |          |
-| render + widths  |                                   |          |
-+--------+---------+                                   |          |
-         |                                             |          |
-         | render(rows, cols)                           |          |
-         v                                             |          |
-+------------------+        MiniJinja data        +-----v---------+---+
-| RenderModel      | <--------------------------- | RuntimeState     |
-| groups/sessions  |                              | focused/active   |
-+--------+---------+                              +------------------+
-         |
-         | template + filters/buttons
-         v
-+------------------+        hitboxes/action map    +------------------+
-| Renderer         | ----------------------------> | Mouse click      |
-| clear + print UI |                               | dispatch         |
-+------------------+                               +---+----------+---+
-                                                        |          |
-                                tab button: switch_tab -+          |
-                               pane button: focus_pane ------------+
+```sh
+moon run zellij-plugin:dev-watch
 ```
 
-Render-impacting session changes request repaint; hidden-field-only updates still refresh stored state without repaint. Shutdown reports and `PaneClosed` events remove stale sessions.
+## Usage
+
+Default panel groups Pi agents by Zellij tab. It shows running or idle state,
+pane, model, title, worktree, current task, and recent plugin events. Click a
+tab or pane entry to switch to it.
+
+## Templates
+
+Plugin accepts an inline [MiniJinja](https://docs.rs/minijinja/latest/minijinja/)
+template in layout configuration. This small panel displays session name and
+agent count:
+
+```kdl
+plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm" {
+    template "{{ zellij_session }}: {{ sessions | length }} agents"
+}
+```
+
+For multi-file templates, set `template_dir` and `template_name`. `main.j2` is
+the default name. Disk templates require Zellij `FullHdAccess` permission.
+
+```kdl
+plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm" {
+    template_dir "/home/you/.config/zellij-agent-threads/templates"
+    template_name "main.j2"
+}
+```
+
+`main.j2` can include sibling templates:
+
+```jinja
+{{ zellij_session }}
+{% for group in groups %}
+{{ group.tab_name }} [{{ group.sessions | length }}]
+{% for session in group.sessions %}
+- {{ session.harness }}: {{ session.state }} — {{ session.cwd }}
+{% endfor %}
+{% endfor %}
+```
+
+Template model exposes `zellij_session`, `sessions`, `groups`, `events`,
+`has_error`, and `last_error`. Each session exposes `state`, `pane`, `cwd`,
+`model`, `title`, `harness`, `current_task`, and `focused`.
+
+## More information
+
+[Documentation website](https://zenobi-us.github.io/zellij-agent-threads/)
