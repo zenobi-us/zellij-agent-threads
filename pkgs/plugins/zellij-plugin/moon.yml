@@ -42,21 +42,22 @@ tasks:
       - "src/**/*.rs"
       - ".cargo/config.toml"
 
-  dev:
+  install:
     deps:
       - "~:build"
-      - "pi-extension:dev"
+      - "pi-extension:install"
     inputs:
       - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
     script: |
       set -euo pipefail
-      plugin_path="$HOME/.config/zellij/plugins/zellij-plugin-agent-threads.wasm"
-
+      plugin_path="$HOME/.config/zellij/plugins/zellij-agent-threads.wasm"
       mkdir -p "$(dirname "$plugin_path")"
-      ln -sfn "$PWD/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm" "$plugin_path"
+      ls -al ./target/wasm32-wasip1/release
+      cp "./target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm" "$plugin_path"
 
       zellij action start-or-reload-plugin "file:$plugin_path"
     options:
+      cache: false
       runInCI: false
 
   dev-watch:
@@ -68,7 +69,7 @@ tasks:
         --watch .cargo/config.toml \
         --watch src \
         --exts rs,toml \
-        -- moon run zellij-plugin:dev --force
+        -- moon run zellij-plugin:install --force
     options:
       persistent: true
       runInCI: false

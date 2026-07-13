@@ -28,10 +28,11 @@ tasks:
   test:
     command: "bun test"
 
-  dev:
+  install:
     script: |
       set -euo pipefail
       mkdir -p "$HOME/.pi/agent/extensions"
       ln -sfn "$PWD/" "$HOME/.pi/agent/extensions/zellij-agent"
     options:
+      cache: false
       runInCI: false
