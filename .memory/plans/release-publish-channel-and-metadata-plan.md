@@ -10,6 +10,8 @@ Separate release coordination from artifact publication without sending computed
 - `publish.yml` owns source checkout, publish metadata computation, GitHub release resolution/creation, and execution of the Moon publish task.
 - `channel` means only distribution channel: `latest` or `next`.
 - `release_tag` means only the actual GitHub Release tag receiving assets.
+- Release Please package keys remain Moon project source paths because Release Please uses them to locate package files.
+- Release Please `component` names use Moon project IDs, producing readable, path-independent release tags.
 - Publish metadata is computed once from the immutable checked-out source by a deployment helper.
 
 ## Target state machine
@@ -183,9 +185,10 @@ Update `.github/actions/sync-moon-to-release-please/action.sh` so `package.json`
 ```text
 moon query projects
   -> use project.source as Release Please package/manifest key
+  -> use project.id as Release Please component
 ```
 
-We allow release please to track all moon projects this way. Resulting in changelogs and release tags that are unique to each project source path.
+Release Please still tracks package files and manifest versions by source path. Human-facing component names and release tags use stable Moon project IDs instead of repository paths.
 
 ### Version source and Release Please type
 
@@ -207,8 +210,11 @@ Synchronization MUST:
 - preserve an existing `.release-please-manifest.json` version;
 - seed a new manifest entry from the project version source;
 - write the same project-source key set into normal and hotfix Release Please configs;
-- continue using Moon source paths as component identities;
+- write `component: <moon-project-id>` for every package config entry;
+- keep Moon source paths only as Release Please package and manifest keys;
 - avoid package-name-to-project-ID guessing or a static mapping file.
+
+Moon project IDs MUST be unique and stable. Renaming a Moon project ID is a release-component migration and MUST include tag-baseline migration handling.
 
 ## Minimal `get-publish-matrix`
 
@@ -259,11 +265,12 @@ The script runs after full-history checkout and toolchain setup. It returns mach
 {
   "target": "zellij-plugin",
   "source": "pkgs/plugins/zellij-plugin",
+  "component": "zellij-plugin",
   "current_version": "0.1.0",
-  "stable_tag": "pkgs/plugins/zellij-plugin-v0.1.0",
+  "stable_tag": "zellij-plugin-v0.1.0",
   "commit_distance": 7,
   "version": "0.1.1-next.7.1",
-  "release_tag": "pkgs/plugins/zellij-plugin-v0.1.1-next.7.1"
+  "release_tag": "zellij-plugin-v0.1.1-next.7.1"
 }
 ```
 
@@ -282,9 +289,10 @@ The resolver MUST:
 1. Query Moon for the exact target.
 2. Fail if target is unknown.
 3. Fail if target lacks a `publish` task.
-4. Read Moon `source`; this is the component identity and release tag prefix.
-5. Read current version from `package.json`, otherwise `Cargo.toml` through Cargo metadata.
-6. Fail on absent or malformed semantic version.
+4. Read Moon `source`; this is the Release Please package/manifest key and version-source location.
+5. Use the exact Moon project ID as the Release Please `component` and release tag prefix.
+6. Read current version from `package.json`, otherwise `Cargo.toml` through Cargo metadata.
+7. Fail on absent or malformed semantic version.
 
 No static project mapping is needed.
 
@@ -315,7 +323,7 @@ retry:      1.2.4-next.2.1 -> 1.2.4-next.2.2
 
 Compute commit distance per component:
 
-1. Derive the component stable tag prefix from Moon `source`.
+1. Derive the component stable tag prefix from the Moon project ID.
 2. Find the latest stable semantic-version tag reachable from `HEAD` for that component. Prerelease tags MUST be excluded.
 3. Count first-parent commits from that stable tag to `HEAD`:
 
@@ -337,20 +345,22 @@ The resolver MUST reject unsupported source branches rather than guessing a bump
 
 ### GitHub release tag rules
 
-Use the Release Please component source-path convention:
+Use the Release Please component convention:
 
 ```text
-<project-source>-v<version>
+<moon-project-id>-v<version>
 ```
 
 Examples:
 
 ```text
-apps/docs-v0.1.0
-pkgs/plugins/zellij-plugin-v0.1.1-next.7.1
+docs-v0.1.0
+zellij-plugin-v0.1.1-next.7.1
 ```
 
-For a root component, use `v<version>`.
+The root package key `.` does not remove the component prefix. A configured Moon project ID still produces `<moon-project-id>-v<version>`. Use `include-component-in-tag: false` only for an explicitly single-component repository that intentionally wants `v<version>` tags.
+
+During migration from source-path tags, the resolver SHOULD accept the latest reachable legacy `<project-source>-v<version>` stable tag as a one-way baseline fallback when no component-named stable tag exists. All newly created tags MUST use the Moon project ID component name. Remove fallback after every component has a component-named stable release.
 
 For `channel=latest`, `publish.yml` MUST require the computed stable release tag to already exist. Release Please owns stable release creation.
 
@@ -488,11 +498,12 @@ Include `actionlint` either in this task or as a separate `github:lint` task.
 
 - package.json publish project becomes a Node Release Please component;
 - Cargo.toml publish project becomes a Rust Release Please component;
+- package config key remains the Moon source path while `component` equals the Moon project ID;
 - Moon project without a publish task is excluded;
 - existing manifest versions are preserved;
 - new manifest versions are seeded from source;
 - publish project with no supported version source fails;
-- normal and hotfix configs receive identical component keys.
+- normal and hotfix configs receive identical package keys and component values.
 
 ### Publish matrix
 
@@ -514,7 +525,8 @@ Include `actionlint` either in this task or as a separate `github:lint` task.
 - prerelease tags are excluded when locating the stable baseline;
 - retry attempt changes only the final prerelease identifier;
 - a fresh dispatch of the same commit and attempt resolves the same version;
-- source-path release tag is component-unique;
+- Moon-project-ID release tag is component-unique;
+- legacy source-path stable tag is accepted only as migration fallback;
 - unknown target fails;
 - non-publishable target fails;
 - unsupported branch fails;
@@ -557,21 +569,22 @@ git diff --check
 ## Implementation order
 
 1. Add/update tests describing channel terminology and target-only publish matrix.
-2. Update sync action discovery to include publishable Node and Cargo projects.
-3. Synchronize Release Please configs and manifest; verify Zellij plugin inclusion.
-4. Reduce `get-publish-matrix` to target selection only.
-5. Add `resolve-publish-metadata`; migrate and remove `generate-publish-git-tag`.
-6. Rename workflow/input/environment terminology from tag to channel.
-7. Update `release.yml` dispatch contract without version/release tag.
-8. Harden `publish.yml`, compute metadata after immutable checkout, and manage releases.
-9. Update docs, npm, and Zellij publish consumers.
-10. Add branch ownership gates and explicit hotfix target branch.
-11. Add `.github` Moon project and run full validation.
-12. Smoke-test manual next publish, normal stable release, hotfix release, and hotfix merge-back.
+2. Update sync action discovery to include publishable Node and Cargo projects and emit `component: <moon-project-id>`.
+3. Synchronize Release Please configs and manifest; verify source-path package keys and Moon-ID component names.
+4. Add temporary legacy source-path stable-tag fallback for component-name migration.
+5. Reduce `get-publish-matrix` to target selection only.
+6. Add `resolve-publish-metadata`; migrate and remove `generate-publish-git-tag`.
+7. Rename workflow/input/environment terminology from tag to channel.
+8. Update `release.yml` dispatch contract without version/release tag.
+9. Harden `publish.yml`, compute metadata after immutable checkout, and manage releases.
+10. Update docs, npm, and Zellij publish consumers.
+11. Add branch ownership gates and explicit hotfix target branch.
+12. Add `.github` Moon project and run full validation.
+13. Smoke-test manual next publish, normal stable release, hotfix release, and hotfix merge-back.
 
 ## Deliberate exclusions
 
-- No static Moon-project-to-manifest mapping. Moon `source` is the identity.
+- No static Moon-project-to-manifest mapping. Moon `source` is the package key; Moon project ID is the component identity.
 - No duplicate version logic in workflows or package tasks.
 - No caller-supplied version or release tag.
 - No rename of npm's native `--tag` option.
