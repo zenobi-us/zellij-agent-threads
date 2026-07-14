@@ -54,6 +54,7 @@ jobs:
               config_file="release-please-config--release.json"
               ;;
             *)
+              # NOTE: intended. mode=skip here means we never try to create a release-pr for mergebacks or alreaady in release commits.
               echo "Unsupported release mode: ${mode}" >&2
               exit 1
               ;;
