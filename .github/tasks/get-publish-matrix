@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Build publish matrix from moon affected projects.
-# release-please payload is used only for mode/tag signal.
+# release-please payload is validated here; release.yml owns channel selection.
 
 set -euo pipefail
 
@@ -46,23 +46,6 @@ require_ref() {
   fi
 }
 
-resolve_mode() {
-  local payload="${1}"
-
-  jq -c '
-    def releases_created_bool:
-      if (.releases_created | type) == "boolean" then
-        .releases_created
-      else
-        ((.releases_created // "false") | tostring | ascii_downcase) == "true"
-      end;
-    if releases_created_bool
-      then { mode: "latest", tag: "latest" }
-      else { mode: "next", tag: "next" }
-    end
-  ' <<<"${payload}"
-}
-
 main() {
   local payload_arg="${1:-}"
   local base="${2:-}"
@@ -74,30 +57,19 @@ main() {
   require_ref "${base}" "base"
   require_ref "${head}" "head"
 
-  local signal_json
-  signal_json="$(resolve_mode "${payload}")"
-
   local affected_json
   affected_json="$(MOON_BASE="${base}" MOON_HEAD="${head}" moon query projects --affected)"
-  local affected_file signal_file
+  local affected_file
   affected_file="$(mktemp)"
-  signal_file="$(mktemp)"
-  trap 'rm -f "${affected_file:-}" "${signal_file:-}"' EXIT
+  trap 'rm -f "${affected_file:-}"' EXIT
 
   printf '%s' "${affected_json}" >"${affected_file}"
-  printf '%s' "${signal_json}" >"${signal_file}"
   jq -cn \
-    --slurpfile affected "${affected_file}" \
-    --slurpfile signal "${signal_file}" '
+    --slurpfile affected "${affected_file}" '
       [
         (($affected[0].projects // [])[])
         | select(( (.tasks // {}) | has("publish") ))
-        | {
-            target: .id,
-            tag: $signal[0].tag,
-            mode: $signal[0].mode,
-            version: ""
-          }
+        | { target: .id }
       ]
       | sort_by(.target)
     '

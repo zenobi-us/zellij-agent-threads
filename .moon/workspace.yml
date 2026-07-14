@@ -2,6 +2,7 @@
 projects:
   sources:
     repo: "./"
+    github: ".github"
   globs:
     - "apps/*"
     - "pkgs/plugins/*"

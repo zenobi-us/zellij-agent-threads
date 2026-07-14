@@ -67,7 +67,7 @@ teardown() {
   [[ "$output" == *"Missing head argument"* ]]
 }
 
-@test "releases_created false resolves next mode/tag and filters publishable targets" {
+@test "filters publishable targets and returns sorted target-only entries" {
   export MOON_MOCK_ASSERT_BASE="${BASE}"
   export MOON_MOCK_ASSERT_HEAD="${HEAD}"
   export MOON_MOCK_OUTPUT='{
@@ -82,13 +82,13 @@ teardown() {
   [ "$status" -eq 0 ]
 
   run jq -e '. == [
-    {"target":"features","tag":"next","mode":"next","version":""},
-    {"target":"public-site","tag":"next","mode":"next","version":""}
+    {"target":"features"},
+    {"target":"public-site"}
   ]' <<<"$output"
   [ "$status" -eq 0 ]
 }
 
-@test "releases_created true (boolean) resolves latest mode/tag" {
+@test "releases_created does not change entry shape" {
   export MOON_MOCK_OUTPUT='{
     "projects": [
       { "id": "features", "tasks": { "publish": {} } }
@@ -99,7 +99,7 @@ teardown() {
   [ "$status" -eq 0 ]
 
   run jq -e '. == [
-    {"target":"features","tag":"latest","mode":"latest","version":""}
+    {"target":"features"}
   ]' <<<"$output"
   [ "$status" -eq 0 ]
 }
@@ -121,7 +121,7 @@ EOF
 
   [ "$status" -eq 0 ]
   run jq -e '. == [
-    {"target":"features","tag":"next","mode":"next","version":""}
+    {"target":"features"}
   ]' <<<"$output"
   [ "$status" -eq 0 ]
 }

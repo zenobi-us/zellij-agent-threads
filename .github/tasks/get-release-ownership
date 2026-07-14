@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+get_commits() {
+  local release_branch="${1}"
+  local main_branch="${2}"
+  git rev-list --first-parent "${main_branch}..${release_branch}"
+}
+
+is_root_commit() {
+  local commit="${1}"
+  local release_branch="${2}"
+  local main_branch="${3}"
+  [[ "${commit}" == "$(git merge-base "${release_branch}" "${main_branch}")" ]]
+}
+
+is_hotfix_commit() {
+  local commit="${1}"
+  local release_branch="${2}"
+  local main_branch="${3}"
+  git merge-base --is-ancestor "${commit}" "${release_branch}" && ! is_root_commit "${commit}" "${release_branch}" "${main_branch}"
+}
+
+is_hotfix_merge() {
+  local commit="${1}"
+  local main_branch="${2}"
+  local repository="${3}"
+  local pr_heads
+
+  pr_heads="$(gh api "repos/${repository}/commits/${commit}/pulls" --jq '.[].head.ref // empty' 2>/dev/null || true)"
+  grep -q '^release/' <<<"${pr_heads}" && return 0
+
+  local release_ref parent
+  while IFS= read -r release_ref; do
+    [[ -n "${release_ref}" ]] || continue
+    [[ "${commit}" == "$(git rev-parse "${release_ref}")" ]] && return 0
+    read -ra commit_and_parents <<<"$(git rev-list --parents -n 1 "${commit}")"
+    for ((i = 2; i < ${#commit_and_parents[@]}; i++)); do
+      parent="${commit_and_parents[$i]}"
+      git merge-base --is-ancestor "${parent}" "${release_ref}" && return 0
+    done
+  done < <(git for-each-ref --format='%(refname)' refs/remotes/origin/release/)
+
+  return 1
+}
+
+main() {
+  local branch="${1:-}"
+  local commit="${2:-HEAD}"
+  local repository="${3:-}"
+  local main_branch="${MAIN_BRANCH_REF:-refs/remotes/origin/main}"
+  local process=true reason=owned
+
+  case "${branch}" in
+  release/*)
+    local release_branch="refs/remotes/origin/${branch}"
+    git show-ref --verify --quiet "${release_branch}" || release_branch="${commit}"
+    if is_root_commit "${commit}" "${release_branch}" "${main_branch}"; then
+      process=false
+      reason=release-branch-root
+    elif ! is_hotfix_commit "${commit}" "${release_branch}" "${main_branch}"; then
+      echo "ERROR: commit '${commit}' is not owned by '${branch}'" >&2
+      exit 1
+    fi
+    ;;
+  main)
+    [[ -n "${repository}" ]] || { echo "ERROR: repository is required for main ownership" >&2; exit 1; }
+    if is_hotfix_merge "${commit}" "${main_branch}" "${repository}"; then
+      process=false
+      reason=hotfix-merge-back
+    fi
+    ;;
+  *)
+    echo "ERROR: unsupported release branch '${branch}'" >&2
+    exit 1
+    ;;
+  esac
+
+  jq -nc --argjson process "${process}" --arg reason "${reason}" '{process:$process,reason:$reason}'
+}
+
+main "$@"

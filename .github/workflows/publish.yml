@@ -1,18 +1,19 @@
 name: Publish
-run-name: Publish ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag || inputs.tag }}
+run-name: Publish ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.channel || inputs.channel }}
 
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: "moon project id to publish"
+        description: Moon project ID to publish
         required: true
         type: string
-      tag:
-        description: "release env/channel (e.g. production, development, latest, next)"
+      channel:
+        description: Distribution channel
         required: true
-        default: "next"
-        type: string
+        default: next
+        type: choice
+        options: [next, latest]
   repository_dispatch:
     types: [publish-package]
 
@@ -23,8 +24,8 @@ permissions:
   packages: write
 
 concurrency:
-  group: publish-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag || inputs.tag }}
-  cancel-in-progress: true
+  group: publish-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.channel || inputs.channel }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -32,98 +33,130 @@ jobs:
     timeout-minutes: 20
     environment:
       name: publish-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}
-    env:
-      PUBLISH_TARGET: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target || inputs.target }}
-      PUBLISH_TAG: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tag || inputs.tag }}
     steps:
-
-      - name: Checkout
+      - name: CheckoutCoordinator
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup Toolchain
+      - name: NormalizeInputs
+        env:
+          REPOSITORY_TARGET: ${{ github.event.client_payload.target }}
+          REPOSITORY_CHANNEL: ${{ github.event.client_payload.channel }}
+          REPOSITORY_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+          REPOSITORY_SOURCE_BRANCH: ${{ github.event.client_payload.source_branch }}
+          MANUAL_TARGET: ${{ inputs.target }}
+          MANUAL_CHANNEL: ${{ inputs.channel }}
+          MANUAL_SOURCE_SHA: ${{ github.sha }}
+          MANUAL_SOURCE_BRANCH: ${{ github.ref_name }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRUSTED_DISPATCH_ACTORS: ${{ vars.PUBLISH_DISPATCH_ACTORS || 'github-actions[bot]' }}
+          OLD_TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == repository_dispatch ]]; then
+            target="${REPOSITORY_TARGET}"
+            channel="${REPOSITORY_CHANNEL}"
+            source_sha="${REPOSITORY_SOURCE_SHA}"
+            source_branch="${REPOSITORY_SOURCE_BRANCH}"
+          else
+            target="${MANUAL_TARGET}"
+            channel="${MANUAL_CHANNEL}"
+            source_sha="${MANUAL_SOURCE_SHA}"
+            source_branch="${MANUAL_SOURCE_BRANCH}"
+          fi
+
+          normalized="$(.github/tasks/validate-publish-inputs "${GITHUB_EVENT_NAME}" "${target}" "${channel}" "${source_sha}" "${source_branch}" "${DISPATCH_ACTOR}" "${TRUSTED_DISPATCH_ACTORS}" "${OLD_TAG}")"
+          {
+            echo "PUBLISH_TARGET=$(jq -r '.target' <<<"${normalized}")"
+            echo "PUBLISH_CHANNEL=$(jq -r '.channel' <<<"${normalized}")"
+            echo "PUBLISH_REF=$(jq -r '.source_sha' <<<"${normalized}")"
+            echo "PUBLISH_SOURCE_BRANCH=$(jq -r '.source_branch' <<<"${normalized}")"
+          } >> "${GITHUB_ENV}"
+
+      - name: ValidateSource
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main" "+refs/heads/release/*:refs/remotes/origin/release/*"
+          remote_ref="refs/remotes/origin/${PUBLISH_SOURCE_BRANCH}"
+          git show-ref --verify --quiet "${remote_ref}" || { echo "ERROR: source branch not found '${PUBLISH_SOURCE_BRANCH}'" >&2; exit 1; }
+          git cat-file -e "${PUBLISH_REF}^{commit}" || { echo "ERROR: source SHA not found '${PUBLISH_REF}'" >&2; exit 1; }
+          git merge-base --is-ancestor "${PUBLISH_REF}" "${remote_ref}" || { echo "ERROR: source SHA is not reachable from '${PUBLISH_SOURCE_BRANCH}'" >&2; exit 1; }
+          git checkout --detach "${PUBLISH_REF}"
+          [[ "$(git rev-parse HEAD)" == "${PUBLISH_REF}" ]] || { echo "ERROR: immutable checkout failed" >&2; exit 1; }
+
+      - name: SetupToolchain
         uses: moonrepo/setup-toolchain@8794f0318b9df4a43a5ddc23cefd16f595b423dd # v0
         with:
           auto-install: true
           auto-setup: true
 
-      - name: Install dependencies
+      - name: InstallDependencies
         run: bun install --frozen-lockfile
 
-      - name: Restore Moon cache
+      - name: RestoreMoonCache
         uses: ./.github/actions/moon-cache
         with:
           key-prefix: moon-publish
           cache-version: v1
 
-      - name: Validate publish target
+      - name: ResolvePublishMetadata
+        id: metadata
         run: |
           set -euo pipefail
+          metadata="$(pkgs/tools/deployment/resolve-publish-metadata "${PUBLISH_TARGET}" "${PUBLISH_CHANNEL}" "${PUBLISH_SOURCE_BRANCH}" "${{ github.run_attempt }}")"
+          echo "${metadata}" | jq -e '.target and .source and .version and .release_tag' >/dev/null
+          {
+            echo "PUBLISH_VERSION=$(jq -r '.version' <<<"${metadata}")"
+            echo "PUBLISH_RELEASE_TAG=$(jq -r '.release_tag' <<<"${metadata}")"
+            echo "PUBLISH_PROJECT_SOURCE=$(jq -r '.source' <<<"${metadata}")"
+          } >> "${GITHUB_ENV}"
+          echo "metadata=${metadata}" >> "${GITHUB_OUTPUT}"
 
-          if [ -z "${PUBLISH_TARGET}" ]; then
-            echo "ERROR: PUBLISH_TARGET is empty. Provide a moon project id." >&2
-            {
-              echo "## Publish Validation Failed"
-              echo
-              echo "- reason: empty target"
-              echo "- tag: \`${PUBLISH_TAG}\`"
-              echo "- trigger: \`${{ github.event_name }}\`"
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 1
+      - name: ResolveGitHubRelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${PUBLISH_CHANNEL}" == latest ]]; then
+            gh release view "${PUBLISH_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null || {
+              echo "ERROR: stable release '${PUBLISH_RELEASE_TAG}' must be created by Release Please" >&2
+              exit 1
+            }
+          elif ! gh release view "${PUBLISH_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            if ! gh release create "${PUBLISH_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --target "${PUBLISH_REF}" --prerelease --generate-notes; then
+              gh release view "${PUBLISH_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null
+            fi
           fi
 
-          projects_json="$(moon query projects)"
-          if ! jq -e --arg target "${PUBLISH_TARGET}" '.projects[] | select(.id == $target)' >/dev/null <<<"${projects_json}"; then
-            valid_targets="$(jq -r '.projects[].id' <<<"${projects_json}" | sort | paste -sd ', ' -)"
-
-            echo "ERROR: Unknown PUBLISH_TARGET '${PUBLISH_TARGET}'." >&2
-            echo "Valid targets: ${valid_targets}" >&2
-
-            {
-              echo "## Publish Validation Failed"
-              echo
-              echo "- reason: unknown target"
-              echo "- target: \`${PUBLISH_TARGET}\`"
-              echo "- tag: \`${PUBLISH_TAG}\`"
-              echo "- trigger: \`${{ github.event_name }}\`"
-              echo
-              echo "### Valid moon project ids"
-              echo
-              echo "\`${valid_targets}\`"
-            } >> "${GITHUB_STEP_SUMMARY}"
-
-            exit 1
-          fi
-
-      - name: Publish target(s)
+      - name: PublishTarget
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
           DOCS_PUBLISH_SSH_KEY: ${{ secrets.DOCS_PUBLISH_SSH_KEY }}
           DOCS_PUBLISH_TOKEN: ${{ secrets.DOCS_PUBLISH_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-          PUBLISH_TARGET: ${{ env.PUBLISH_TARGET }}
-          PUBLISH_TAG: ${{ env.PUBLISH_TAG }}
-        run: |
-          set -euo pipefail
-          moon run ${PUBLISH_TARGET}:publish --force
-      - name: Publish summary
+        run: moon run "${PUBLISH_TARGET}:publish" --force
+
+      - name: PublishSummary
         if: always()
         run: |
-          set -euo pipefail
           {
             echo "## Publish Summary"
-            echo
             echo "| Field | Value |"
             echo "|---|---|"
             echo "| target | \`${PUBLISH_TARGET}\` |"
-            echo "| tag | \`${PUBLISH_TAG}\` |"
-            echo "| trigger | \`${{ github.event_name }}\` |"
+            echo "| channel | \`${PUBLISH_CHANNEL}\` |"
+            echo "| version | \`${PUBLISH_VERSION:-unresolved}\` |"
+            echo "| release tag | \`${PUBLISH_RELEASE_TAG:-unresolved}\` |"
+            echo "| source branch | \`${PUBLISH_SOURCE_BRANCH}\` |"
+            echo "| source SHA | \`${PUBLISH_REF}\` |"
+            echo "| trigger | \`${GITHUB_EVENT_NAME}\` |"
             echo "| result | \`${{ job.status }}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Moon run report summary
+      - name: MoonRunReportSummary
         if: always()
         continue-on-error: true
         uses: moonrepo/run-report-action@bfb317b1a2fd5b879d7c14d6d7af6360178fd879 # v1.9.0

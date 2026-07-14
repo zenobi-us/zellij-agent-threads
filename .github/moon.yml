@@ -1,0 +1,16 @@
+id: github
+language: bash
+layer: tool
+
+tasks:
+  test:
+    command: "bats tasks/*.bats actions/*/*.bats"
+    inputs:
+      - "actions/**/*"
+      - "tasks/**/*"
+      - "workflows/**/*"
+
+  lint:
+    command: "actionlint workflows/release.yml workflows/publish.yml"
+    inputs:
+      - "workflows/**/*"
