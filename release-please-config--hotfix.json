@@ -9,9 +9,9 @@
       "group": "application",
       "release-type": "node"
     },
-    "pkgs/plugins/pi-extension": {
+    "pkgs/plugins/zellij-plugin": {
       "group": "library",
-      "release-type": "node"
+      "release-type": "rust"
     }
   },
   "plugins": [

@@ -33,6 +33,7 @@ tasks:
       - "/.release-please-manifest.json"
       - "/apps/*/package.json"
       - "/pkgs/**/package.json"
+      - "/pkgs/**/Cargo.toml"
     outputs:
       - "public/releases.json"
 

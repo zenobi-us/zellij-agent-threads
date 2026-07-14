@@ -33,37 +33,52 @@ discover_release_files() {
   fi
 }
 
-# 1) moon query + package.json > release package map
+# 1) publishable moon projects + supported version source > release package map
 moon_query_to_project_map() {
   moon query projects | jq -r '
     .projects[]?
     | select((.source | strings) != "")
+    | select((.tasks // {}) | has("publish"))
     | [.source, (.layer // .config.layer // "unknown")]
     | @tsv
   ' | while IFS=$'\t' read -r source layer; do
     local package_file="${source}/package.json"
+    local cargo_file="${source}/Cargo.toml"
+    local version release_type
 
-    if [[ ! -f "${package_file}" ]]; then
-      continue
-    fi
+    local version_source="unsupported"
+    [[ -f "${package_file}" ]] && version_source="node"
+    [[ "${version_source}" == unsupported && -f "${cargo_file}" ]] && version_source="rust"
 
-    if ! jq -e '(.name // "") != ""' "${package_file}" >/dev/null; then
-      continue
-    fi
+    # Add future version-source adapters as new cases. Unsupported publishable projects fail loudly.
+    case "${version_source}" in
+    node)
+      version="$(jq -r '.version // ""' "${package_file}")"
+      release_type="node"
+      ;;
+    rust)
+      command -v cargo >/dev/null || { echo "cargo not found for ${cargo_file}" >&2; exit 1; }
+      version="$(cargo metadata --no-deps --format-version 1 --manifest-path "${cargo_file}" | jq -r --arg manifest "$(cd "${source}" && pwd -P)/Cargo.toml" '.packages[] | select(.manifest_path == $manifest) | .version')"
+      release_type="rust"
+      ;;
+    *)
+      echo "Unsupported version source for publishable Moon project '${source}'." >&2
+      exit 1
+      ;;
+    esac
 
-    local version
-    version="$(jq -r '.version // "0.1.0"' "${package_file}")"
+    [[ -n "${version}" ]] || { echo "Missing version for publishable Moon project '${source}'." >&2; exit 1; }
 
     local group="${layer}"
     if [[ "${source}" == pkgs/provider-* ]]; then
       group="provider"
     fi
 
-    jq -nc --arg source "${source}" --arg group "${group}" --arg version "${version}" '{
+    jq -nc --arg source "${source}" --arg group "${group}" --arg version "${version}" --arg release_type "${release_type}" '{
       key: $source,
       value: {
         group: $group,
-        "release-type": "node",
+        "release-type": $release_type,
         version: $version
       }
     }'
@@ -99,7 +114,7 @@ moon_query_to_rp_manifest() {
   ' <<<"${project_map_json}"
 }
 
-print_key_diff() {
+print_json_diff() {
   local label="${1}"
   local expected_json="${2}"
   local actual_json="${3}"
@@ -107,12 +122,11 @@ print_key_diff() {
   local expected_file actual_file
   expected_file="$(mktemp)"
   actual_file="$(mktemp)"
-
-  jq -r 'keys[]' <<<"${expected_json}" >"${expected_file}"
-  jq -r 'keys[]' <<<"${actual_json}" >"${actual_file}"
+  jq -S . <<<"${expected_json}" >"${expected_file}"
+  jq -S . <<<"${actual_json}" >"${actual_file}"
 
   if ! diff -u "${actual_file}" "${expected_file}" >/dev/null; then
-    echo "${label} key mismatch" >&2
+    echo "${label} mismatch" >&2
     diff -u "${actual_file}" "${expected_file}" >&2 || true
     rm -f "${expected_file}" "${actual_file}"
     return 1
@@ -132,7 +146,7 @@ run_check() {
 
   local failed=0
 
-  if ! print_key_diff \
+  if ! print_json_diff \
     "Manifest (.release-please-manifest.json)" \
     "${expected_manifest}" \
     "${existing_manifest}"; then
@@ -142,7 +156,7 @@ run_check() {
   local config actual_packages
   for config in "${configs[@]}"; do
     actual_packages="$(jq -c '.packages // {}' "${config}")"
-    if ! print_key_diff "Config (${config}) .packages" "${expected_packages}" "${actual_packages}"; then
+    if ! print_json_diff "Config (${config}) .packages" "${expected_packages}" "${actual_packages}"; then
       failed=1
     fi
   done
@@ -151,7 +165,7 @@ run_check() {
     exit 1
   fi
 
-  echo "release-please manifest/config keys are in sync with moon query output."
+  echo "release-please manifest/config values are in sync with moon query output."
 }
 
 run_sync() {
