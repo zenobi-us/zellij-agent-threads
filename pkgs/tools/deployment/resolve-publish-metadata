@@ -57,17 +57,29 @@ is_semver() {
 
 is_semver "${current_version}" || { echo "ERROR: malformed semantic version '${current_version}' for '${target}'." >&2; exit 1; }
 
+find_stable_tag() {
+  local prefix="${1}"
+  local candidate_tag candidate_version
+  while IFS= read -r candidate_tag; do
+    candidate_version="${candidate_tag#"${prefix}"}"
+    if [[ "${candidate_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+      echo "${candidate_tag}"
+      return
+    fi
+  done < <(git tag --merged HEAD --list "${prefix}*" --sort=-v:refname)
+}
+
 base_version="${current_version%%[-+]*}"
 IFS=. read -r major minor patch <<<"${base_version}"
-[[ "${source}" == "." ]] && tag_prefix="v" || tag_prefix="${source}-v"
-stable_tag=""
-while IFS= read -r candidate_tag; do
-  candidate_version="${candidate_tag#"${tag_prefix}"}"
-  if [[ "${candidate_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    stable_tag="${candidate_tag}"
-    break
-  fi
-done < <(git tag --merged HEAD --list "${tag_prefix}*" --sort=-v:refname)
+component="${target}"
+tag_prefix="${component}-v"
+stable_tag="$(find_stable_tag "${tag_prefix}")"
+
+# Temporary migration fallback: old releases used Moon source paths as tag prefixes.
+if [[ -z "${stable_tag}" ]]; then
+  [[ "${source}" == "." ]] && legacy_tag_prefix="v" || legacy_tag_prefix="${source}-v"
+  [[ "${legacy_tag_prefix}" == "${tag_prefix}" ]] || stable_tag="$(find_stable_tag "${legacy_tag_prefix}")"
+fi
 
 if [[ -n "${stable_tag}" ]]; then
   commit_distance="$(git rev-list --first-parent --count "${stable_tag}..HEAD")"
@@ -89,9 +101,10 @@ release_tag="${tag_prefix}${version}"
 jq -nc \
   --arg target "${target}" \
   --arg source "${source}" \
+  --arg component "${component}" \
   --arg current_version "${current_version}" \
   --arg stable_tag "${stable_tag}" \
   --argjson commit_distance "${commit_distance}" \
   --arg version "${version}" \
   --arg release_tag "${release_tag}" \
-  '{target:$target,source:$source,current_version:$current_version,stable_tag:$stable_tag,commit_distance:$commit_distance,version:$version,release_tag:$release_tag}'
+  '{target:$target,source:$source,component:$component,current_version:$current_version,stable_tag:$stable_tag,commit_distance:$commit_distance,version:$version,release_tag:$release_tag}'

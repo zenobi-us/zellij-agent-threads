@@ -39,9 +39,9 @@ moon_query_to_project_map() {
     .projects[]?
     | select((.source | strings) != "")
     | select((.tasks // {}) | has("publish"))
-    | [.source, (.layer // .config.layer // "unknown")]
+    | [.id, .source, (.layer // .config.layer // "unknown")]
     | @tsv
-  ' | while IFS=$'\t' read -r source layer; do
+  ' | while IFS=$'\t' read -r project_id source layer; do
     local package_file="${source}/package.json"
     local cargo_file="${source}/Cargo.toml"
     local version release_type
@@ -67,6 +67,7 @@ moon_query_to_project_map() {
       ;;
     esac
 
+    [[ -n "${project_id}" ]] || { echo "Missing ID for publishable Moon project '${source}'." >&2; exit 1; }
     [[ -n "${version}" ]] || { echo "Missing version for publishable Moon project '${source}'." >&2; exit 1; }
 
     local group="${layer}"
@@ -74,9 +75,10 @@ moon_query_to_project_map() {
       group="provider"
     fi
 
-    jq -nc --arg source "${source}" --arg group "${group}" --arg version "${version}" --arg release_type "${release_type}" '{
+    jq -nc --arg source "${source}" --arg component "${project_id}" --arg group "${group}" --arg version "${version}" --arg release_type "${release_type}" '{
       key: $source,
       value: {
+        component: $component,
         group: $group,
         "release-type": $release_type,
         version: $version

@@ -6,10 +6,12 @@
   "release-type": "node",
   "packages": {
     "apps/docs": {
+      "component": "docs",
       "group": "application",
       "release-type": "node"
     },
     "pkgs/plugins/zellij-plugin": {
+      "component": "zellij-plugin",
       "group": "library",
       "release-type": "rust"
     }

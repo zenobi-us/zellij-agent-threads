@@ -43,8 +43,8 @@ run_action() {
   [ "$status" -eq 0 ]
 
   run jq -e '.packages == {
-    "apps/node":{"group":"application","release-type":"node"},
-    "pkgs/rust":{"group":"library","release-type":"rust"}
+    "apps/node":{"component":"node","group":"application","release-type":"node"},
+    "pkgs/rust":{"component":"rust","group":"library","release-type":"rust"}
   }' "${WORKSPACE}/release-please-config--release.json"
   [ "$status" -eq 0 ]
   run jq -e 'has("tools/internal") | not' "${WORKSPACE}/release-please-config--release.json"
@@ -58,7 +58,7 @@ run_action() {
   [ "$status" -eq 0 ]
 }
 
-@test "normal and hotfix configs receive identical package values" {
+@test "normal and hotfix configs receive identical package keys and components" {
   run_action sync
   [ "$status" -eq 0 ]
   run bash -c 'diff -u <(jq -S .packages "$1") <(jq -S .packages "$2")' _ \
@@ -74,10 +74,10 @@ run_action() {
   [[ "$output" == *"Unsupported version source"* ]]
 }
 
-@test "check rejects wrong release type and manifest version" {
+@test "check rejects wrong component, release type, and manifest version" {
   run_action sync
   [ "$status" -eq 0 ]
-  jq '.packages["apps/node"]["release-type"] = "rust"' "${WORKSPACE}/release-please-config--release.json" >"${WORKSPACE}/config.tmp"
+  jq '.packages["apps/node"].component = "wrong" | .packages["apps/node"]["release-type"] = "rust"' "${WORKSPACE}/release-please-config--release.json" >"${WORKSPACE}/config.tmp"
   mv "${WORKSPACE}/config.tmp" "${WORKSPACE}/release-please-config--release.json"
   jq '.["pkgs/rust"] = "0.0.0"' "${WORKSPACE}/.release-please-manifest.json" >"${WORKSPACE}/manifest.tmp"
   mv "${WORKSPACE}/manifest.tmp" "${WORKSPACE}/.release-please-manifest.json"

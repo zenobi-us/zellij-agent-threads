@@ -37,7 +37,7 @@ commit_empty() {
 @test "latest preserves Node version and component tag" {
   run "${SCRIPT}" fixture latest main 1
   [ "$status" -eq 0 ]
-  run jq -e '.current_version == "1.2.3" and .version == "1.2.3" and .release_tag == "pkg-v1.2.3"' <<<"$output"
+  run jq -e '.component == "fixture" and .current_version == "1.2.3" and .version == "1.2.3" and .release_tag == "fixture-v1.2.3"' <<<"$output"
   [ "$status" -eq 0 ]
 }
 
@@ -52,19 +52,29 @@ EOF
 
   run "${SCRIPT}" fixture latest main 1
   [ "$status" -eq 0 ]
-  run jq -e '.current_version == "2.3.4" and .release_tag == "pkg-v2.3.4"' <<<"$output"
+  run jq -e '.current_version == "2.3.4" and .release_tag == "fixture-v2.3.4"' <<<"$output"
   [ "$status" -eq 0 ]
 }
 
 @test "next uses stable first-parent distance and ignores prerelease tags" {
-  git -C "${WORKSPACE}" tag pkg-v1.2.3
+  git -C "${WORKSPACE}" tag fixture-v1.2.3
   commit_empty one
-  git -C "${WORKSPACE}" tag pkg-v9.0.0-next.1.1
+  git -C "${WORKSPACE}" tag fixture-v9.0.0-next.1.1
   commit_empty two
 
   run "${SCRIPT}" fixture next main 4
   [ "$status" -eq 0 ]
-  run jq -e '.stable_tag == "pkg-v1.2.3" and .commit_distance == 2 and .version == "1.3.0-next.2.4"' <<<"$output"
+  run jq -e '.stable_tag == "fixture-v1.2.3" and .commit_distance == 2 and .version == "1.3.0-next.2.4"' <<<"$output"
+  [ "$status" -eq 0 ]
+}
+
+@test "legacy source-path stable tag is migration fallback" {
+  git -C "${WORKSPACE}" tag pkg-v1.2.3
+  commit_empty one
+
+  run "${SCRIPT}" fixture next main 1
+  [ "$status" -eq 0 ]
+  run jq -e '.stable_tag == "pkg-v1.2.3" and .commit_distance == 1 and .release_tag == "fixture-v1.3.0-next.1.1"' <<<"$output"
   [ "$status" -eq 0 ]
 }
 
@@ -93,12 +103,12 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "root component uses v-prefixed release tag" {
+@test "root package path still uses component-prefixed release tag" {
   export MOON_SOURCE='.'
   cp "${WORKSPACE}/pkg/package.json" "${WORKSPACE}/package.json"
   run "${SCRIPT}" fixture latest main 1
   [ "$status" -eq 0 ]
-  run jq -e '.source == "." and .release_tag == "v1.2.3"' <<<"$output"
+  run jq -e '.source == "." and .component == "fixture" and .release_tag == "fixture-v1.2.3"' <<<"$output"
   [ "$status" -eq 0 ]
 }
 
