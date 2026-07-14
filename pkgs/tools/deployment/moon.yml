@@ -7,8 +7,11 @@ project:
 
 tasks:
   test:
-    command: "bash -n deploy-github-pages generate-publish-git-tag npm-publish"
+    script: |
+      bash -n deploy-github-pages resolve-publish-metadata npm-publish
+      bats *.bats
     inputs:
       - "deploy-github-pages"
-      - "generate-publish-git-tag"
+      - "resolve-publish-metadata"
+      - "*.bats"
       - "npm-publish"

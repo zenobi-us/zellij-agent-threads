@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-publish_tag="${PUBLISH_TAG:-}"
-if [ -z "${publish_tag}" ]; then
-  echo "ERROR: PUBLISH_TAG is required (expected: latest or next)." >&2
+publish_channel="${PUBLISH_CHANNEL:-}"
+if [ -z "${publish_channel}" ]; then
+  echo "ERROR: PUBLISH_CHANNEL is required (expected: latest or next)." >&2
   exit 1
 fi
 
-eval "$("${MOON_WORKSPACE_ROOT}/pkgs/tools/deployment/generate-publish-git-tag" "${publish_tag}" ".")"
+case "${publish_channel}" in latest|next) ;; *) echo "ERROR: unsupported PUBLISH_CHANNEL '${publish_channel}'." >&2; exit 1 ;; esac
 
-if [ "${publish_tag}" = "next" ]; then
-  echo "Preparing next prerelease: ${PUBLISH_CURRENT_VERSION} -> ${PUBLISH_VERSION}"
+if [ "${publish_channel}" = "next" ]; then
+  : "${PUBLISH_VERSION:?PUBLISH_VERSION is required for next publishing}"
+  echo "Preparing next prerelease: ${PUBLISH_VERSION}"
   node -e '
     const fs = require("node:fs");
     const pkgPath = "package.json";
@@ -20,7 +21,7 @@ if [ "${publish_tag}" = "next" ]; then
   ' "${PUBLISH_VERSION}"
 fi
 
-args=(--access public --tag "${publish_tag}")
+args=(--access public --tag "${publish_channel}")
 # if [ -n "${GITHUB_ACTIONS:-}" ]; then
 # args+=(--provenance)
 # fi

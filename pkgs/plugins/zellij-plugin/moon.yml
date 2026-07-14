@@ -89,7 +89,7 @@ tasks:
       wasm_path="$PWD/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
       asset_name="zellij-plugin-agent-threads.wasm"
       repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-      tag="${PUBLISH_TAG:?PUBLISH_TAG is required}"
+      tag="${PUBLISH_RELEASE_TAG:?PUBLISH_RELEASE_TAG is required}"
 
       test -f "$wasm_path"
       gh release view "$tag" --repo "$repo" >/dev/null
