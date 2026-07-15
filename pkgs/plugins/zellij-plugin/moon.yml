@@ -42,6 +42,27 @@ tasks:
       - "src/**/*.rs"
       - ".cargo/config.toml"
 
+  demo:
+    type: run
+    deps:
+      - "~:build"
+    script: |
+      set -euo pipefail
+      echo "Starting Zellij demo session with zellij-agent-threads plugin"
+      command -v zellij >/dev/null || { echo "zellij is required" >&2; exit 1; }
+      command -v ghostty >/dev/null || { echo "ghostty is required" >&2; exit 1; }
+      layout_path="$PWD/demo.kdl"
+      ghostty "+new-window" -e env \
+        zellij \
+          --new-session-with-layout "$layout_path"
+    inputs:
+      - "demo.kdl"
+      - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+    options:
+      cache: false
+      interactive: true
+      runInCI: false
+
   install:
     deps:
       - "~:build"

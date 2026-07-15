@@ -1,0 +1,17 @@
+layout {
+    default_tab_template {
+        pane size=1 {
+            plugin location="tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane {
+                plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+            }
+            pane split_direction="horizontal" {
+                children
+            }
+        }
+    }
+}
+
+session_serialization false
