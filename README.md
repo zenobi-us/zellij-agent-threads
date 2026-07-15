@@ -71,17 +71,18 @@ plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm
 }
 ```
 
-For multi-file templates, set `template_dir` and `template_name`. `main.j2` is
-the default name. Disk templates require Zellij `FullHdAccess` permission.
+For multi-file templates, set `template_file` to the entry file. Disk templates
+require Zellij `FullHdAccess`. Includes/imports load lazily and remain cached
+until plugin reload. External templates are trusted and can read files exposed
+to the plugin through `/host`.
 
 ```kdl
 plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm" {
-    template_dir "/home/you/.config/zellij-agent-threads/templates"
-    template_name "main.j2"
+    template_file "/home/you/.config/zellij-agent-threads/templates/main.jinja"
 }
 ```
 
-`main.j2` can include sibling templates:
+`main.jinja` can include sibling templates:
 
 ```jinja
 {{ zellij_session }}
@@ -96,6 +97,25 @@ plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm
 Template model exposes `zellij_session`, `sessions`, `groups`, `events`,
 `has_error`, and `last_error`. Each session exposes `state`, `pane`, `cwd`,
 `model`, `title`, `harness`, `current_task`, and `focused`.
+
+Templates use `zellij-template-render` components and typed actions:
+
+```jinja
+{% call Flex(direction="column", grow=1) %}
+{% for session in sessions %}
+{% call Button(on_click=actions.focus_pane(session.pane), focused=session.focused) %}
+{{ " %s " | format(session.title) | fg("index:6") }}
+{% endcall %}
+{% endfor %}
+{% endcall %}
+```
+
+Available actions are `actions.switch_tab(index)` and `actions.focus_pane(pane)`.
+Colors use `index:N` or `rgb:R,G,B`. `format` performs normal MiniJinja string
+formatting; `format_time` formats Unix timestamps.
+
+Legacy `template_dir`/`template_name` configuration and the local `Grid`,
+`Stack`, `PaneButton`, `TabButton`, `remap`, and `italic` helpers were removed.
 
 ## More information
 
