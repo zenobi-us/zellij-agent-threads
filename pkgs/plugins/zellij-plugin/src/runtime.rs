@@ -23,7 +23,6 @@ pub(crate) struct RuntimeState {
     pub(crate) events: VecDeque<String>,
     pub(crate) pipe_count: u64,
     pub(crate) last_error: Option<String>,
-    pub(crate) last_cols: usize,
     pub(crate) focused_pane: Option<String>,
     pub(crate) active_tab: Option<usize>,
     pub(crate) active_tab_position: Option<usize>,
@@ -34,11 +33,6 @@ impl RuntimeState {
     /// Records plugin startup in the event log.
     pub(crate) fn load(&mut self) {
         self.push_event("plugin loaded".into());
-    }
-
-    /// Stores latest render width so mouse hit testing can use current coordinates.
-    pub(crate) fn set_last_cols(&mut self, cols: usize) {
-        self.last_cols = cols;
     }
 
     pub(crate) fn sync_pane_focus(

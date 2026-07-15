@@ -9,4 +9,4 @@ license = "MIT"
 zellij-tile = "=0.44.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-minijinja = "2.21"
+zellij-template-render = { git = "https://github.com/zenobi-us/zellij-plugins", rev = "1594af880c1094bbb5bd4df6aa525f509a39092c" }

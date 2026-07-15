@@ -7,7 +7,9 @@ mod render;
 mod runtime;
 
 use config::PluginConfig;
-use render::{hitbox_at, ClickAction, Hitbox, RenderModel, Renderer};
+use render::{
+    error_frame, paint_frame, AgentRenderer, ClickAction, RenderModel, RenderedFrame, TemplateError,
+};
 use runtime::RuntimeState;
 
 #[derive(Default)]
@@ -15,8 +17,26 @@ struct PluginState {
     runtime: RuntimeState,
     plugin_id: Option<u32>,
     config: PluginConfig,
-    hitboxes: Vec<Hitbox>,
+    frame: RenderedFrame,
+    renderer: Option<AgentRenderer>,
+    template_error: Option<TemplateError>,
+    renderer_configuration: BTreeMap<String, String>,
     last_pane_manifest: Option<PaneManifest>,
+}
+
+impl PluginState {
+    fn initialize_renderer(&mut self) {
+        match AgentRenderer::from_configuration(&self.renderer_configuration) {
+            Ok(renderer) => {
+                self.renderer = Some(renderer);
+                self.template_error = None;
+            }
+            Err(error) => {
+                self.renderer = None;
+                self.template_error = Some(error);
+            }
+        }
+    }
 }
 
 register_plugin!(PluginState);
@@ -24,13 +44,15 @@ register_plugin!(PluginState);
 impl ZellijPlugin for PluginState {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = PluginConfig::parse(&configuration);
+        self.renderer_configuration = configuration.clone();
+        self.initialize_renderer();
         set_selectable(true);
         let mut permissions = vec![
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
         ];
-        if self.config.render.template_dir.is_some() {
+        if configuration.contains_key("template_file") {
             permissions.push(PermissionType::FullHdAccess);
         }
         request_permission(&permissions);
@@ -51,14 +73,32 @@ impl ZellijPlugin for PluginState {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
-        self.runtime.set_last_cols(cols);
         let model = RenderModel::from_runtime(&self.runtime, &self.config.render);
-        self.hitboxes = Renderer::render(&model, rows, cols);
+        self.frame = if let Some(renderer) = &mut self.renderer {
+            match renderer.render(&model, rows, cols) {
+                Ok(frame) => frame,
+                Err(error) => error_frame(&error, rows, cols),
+            }
+        } else if let Some(error) = &self.template_error {
+            error_frame(error, rows, cols)
+        } else {
+            let error = TemplateError::new(
+                zellij_template_render::ErrorKind::InvalidOperation,
+                "template renderer unavailable",
+            );
+            error_frame(&error, rows, cols)
+        };
+        paint_frame(&self.frame, rows, cols);
     }
 
     fn update(&mut self, event: Event) -> bool {
         match event {
-            Event::Mouse(Mouse::LeftClick(row, col)) => match hitbox_at(&self.hitboxes, row, col) {
+            Event::Mouse(Mouse::LeftClick(row, col)) => match usize::try_from(row)
+                .ok()
+                .and_then(|row| self.frame.hitboxes.get(row))
+                .and_then(|line| line.get(col))
+                .and_then(Clone::clone)
+            {
                 Some(ClickAction::SwitchTab { tab }) => {
                     switch_tab_to(tab);
                     true
@@ -90,6 +130,11 @@ impl ZellijPlugin for PluginState {
             }
             Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
             Event::PermissionRequestResult(_) => {
+                if self.renderer.is_none()
+                    && self.renderer_configuration.contains_key("template_file")
+                {
+                    self.initialize_renderer();
+                }
                 set_selectable(false);
                 true
             }

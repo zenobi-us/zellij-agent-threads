@@ -5,43 +5,6 @@ use serde::Serialize;
 use crate::config::RenderConfig;
 use crate::runtime::{basename, state_label, RuntimeState};
 
-pub(crate) const DEFAULT_TEMPLATE: &str = r#"
-{{ " %s " | format(zellij_session) | bg("yellow") | fg("black") }}
-{% call Flex(direction="column", grow=true, gap=0, weights="1,0", paddingY=2) -%}
-{% if sessions | length > 0 -%}
-{{ " Agents " | bold | bg("cyan") | fg("black") }}
-{% macro indicator(focused) -%}{{ " " | bg("blue") | fg("black") if focused else " " }}{%- endmacro %}
-{% macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro %}
-{% for group in groups -%}
-{% set tab_label = " %s " | format(group.tab_name) -%}
-{% if group.tab_id is not none -%}
-{% call TabButton(tab=group.tab_id) -%}{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | bg("grey") | dim }}{%- endcall %}
-{% else -%}
-{{ tab_label | bg("cyan") | fg("black") if group.active else tab_label | bg("grey") | dim }}
-{% endif -%}
-
-{% for session in group.sessions -%}
-{% call PaneButton(pane=session.pane) -%}
-    {%- set icon = session.state | remap({ "running": "󱉺", "idle": "󰏧" }) -%}
-    {%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
-{{ indicator(session.focused) }} {{ t(agent | bold, session.focused) }}
-{{ indicator(session.focused) }}     󰆈 {{ session.title | bold if session.focused else session.title | dim }}
-{{ indicator(session.focused) }}      {{ session.cwd | bold if session.focused else session.cwd | dim }}
-{% if session.state == "running" -%}{{ indicator(session.focused) }}  {{ session.current_task | bold if session.focused else session.current_task | dim }}{%- endif %}
-{%- endcall %}
-
-{% endfor -%}
-{% endfor %}
----
-{% if has_error %}{{ " pipe error " | bg("red") | fg("white") }} {{ last_error | italic }}
-{% endif -%}
-{{ " Events " | bg("yellow") | fg("black") }}
-{% for event in events %}{{ " " | bg("yellow") }}  {{ " %s " | format(event) | fg("yellow")  }}
-{% endfor %}
-{% endif -%}
-{%- endcall %}
-"#;
-
 /// Render-ready snapshot of runtime state.
 ///
 /// This is the seam between plugin state and terminal drawing. It hides storage
@@ -55,9 +18,6 @@ pub(crate) struct RenderModel {
     pub(super) harness: String,
     pub(super) groups: Vec<TabGroup>,
     pub(super) events: Vec<String>,
-    pub(super) template: String,
-    pub(super) template_dir: Option<String>,
-    pub(super) template_name: String,
     pub(super) has_error: bool,
     pub(super) last_error: String,
 }
@@ -143,13 +103,55 @@ impl RenderModel {
             harness,
             groups,
             events: state.events.iter().rev().cloned().collect(),
-            template: config.template.clone(),
-            template_dir: config.template_dir.clone(),
-            template_name: config.template_name.clone(),
             has_error: state.last_error.is_some(),
             last_error: state.last_error.clone().unwrap_or_default(),
         }
     }
+
+    pub(super) fn active_tab(&self) -> Option<u32> {
+        self.groups
+            .iter()
+            .find(|group| group.active)
+            .and_then(|group| group.tab_id)
+            .and_then(|tab| u32::try_from(tab).ok())
+    }
+
+    pub(super) fn focused_pane(&self) -> Option<&str> {
+        self.sessions
+            .iter()
+            .find(|session| session.focused)
+            .map(|session| session.pane.as_str())
+    }
+
+    pub(super) fn layout_fill(&self, viewport_rows: usize) -> String {
+        let agent_rows = if self.sessions.is_empty() {
+            0
+        } else {
+            1 + self
+                .groups
+                .iter()
+                .map(|group| {
+                    1 + group
+                        .sessions
+                        .iter()
+                        .map(|session| 3 + usize::from(session.state == "running"))
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
+        };
+        let event_rows = if self.sessions.is_empty() {
+            0
+        } else {
+            1 + self.events.len() + usize::from(self.has_error)
+        };
+        blank_rows(viewport_rows.saturating_sub(5 + agent_rows + event_rows))
+    }
+}
+
+fn blank_rows(rows: usize) -> String {
+    std::iter::repeat_n(" ", rows)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) -> SessionLine {
@@ -212,7 +214,6 @@ mod tests {
             events: VecDeque::from(["old".into(), "new".into()]),
             pipe_count: 2,
             last_error: None,
-            last_cols: 0,
             focused_pane: Some("1".into()),
             active_tab: Some(7),
             active_tab_position: Some(0),
