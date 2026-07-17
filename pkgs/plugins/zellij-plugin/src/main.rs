@@ -15,6 +15,7 @@ use runtime::RuntimeState;
 #[derive(Default)]
 struct PluginState {
     runtime: RuntimeState,
+    mode_info: ModeInfo,
     plugin_id: Option<u32>,
     config: PluginConfig,
     frame: RenderedFrame,
@@ -58,6 +59,7 @@ impl ZellijPlugin for PluginState {
         request_permission(&permissions);
         subscribe(&[
             EventType::Mouse,
+            EventType::ModeUpdate,
             EventType::PaneClosed,
             EventType::PaneUpdate,
             EventType::TabUpdate,
@@ -75,7 +77,7 @@ impl ZellijPlugin for PluginState {
     fn render(&mut self, rows: usize, cols: usize) {
         let model = RenderModel::from_runtime(&self.runtime, &self.config.render);
         self.frame = if let Some(renderer) = &mut self.renderer {
-            match renderer.render(&model, rows, cols) {
+            match renderer.render(&self.mode_info, &model, rows, cols) {
                 Ok(frame) => frame,
                 Err(error) => error_frame(&error, rows, cols),
             }
@@ -93,6 +95,11 @@ impl ZellijPlugin for PluginState {
 
     fn update(&mut self, event: Event) -> bool {
         match event {
+            Event::ModeUpdate(mode_info) => {
+                let changed = self.mode_info != mode_info;
+                self.mode_info = mode_info;
+                changed
+            }
             Event::Mouse(Mouse::LeftClick(row, col)) => match usize::try_from(row)
                 .ok()
                 .and_then(|row| self.frame.hitboxes.get(row))

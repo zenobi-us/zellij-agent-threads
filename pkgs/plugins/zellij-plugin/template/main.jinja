@@ -1,0 +1,9 @@
+{%- call Flex(direction="column", grow=1) -%}
+  {%- include "session_badge.jinja" -%}
+
+  {%- call Flex(direction="column", grow=1, shrink=1, overflow="scroll") -%}
+    {% include "sessions_list.jinja" %}
+  {%- endcall -%}
+
+  {% include "events.jinja" %}
+{%- endcall -%}

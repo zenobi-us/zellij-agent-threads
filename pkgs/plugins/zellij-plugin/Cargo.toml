@@ -6,7 +6,12 @@ description = "Zellij plugin that lists Pi agent sessions"
 license = "MIT"
 
 [dependencies]
-zellij-tile = "=0.44.0"
+zellij-tile = "=0.44.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-zellij-template-render = { git = "https://github.com/zenobi-us/zellij-plugins", rev = "1594af880c1094bbb5bd4df6aa525f509a39092c" }
+minijinja = "2.21"
+minijinja-embed = "2.21"
+zellij-template-render = { git = "https://github.com/zenobi-us/zellij-plugins", rev = "7156a80fab6f1340a3d6906f9bacfa228f0cfd1a" }
+
+[build-dependencies]
+minijinja-embed = "2.21"

@@ -1177,6 +1177,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minijinja-embed"
+version = "2.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf74fd3b5645c9aeaddb3ddb0d7fc2055a70682c40a5cb0b930781f13b2a009b"
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2569,6 +2575,8 @@ dependencies = [
 name = "zellij-plugin-agent-threads"
 version = "0.1.0"
 dependencies = [
+ "minijinja",
+ "minijinja-embed",
  "serde",
  "serde_json",
  "zellij-template-render",
@@ -2578,19 +2586,20 @@ dependencies = [
 [[package]]
 name = "zellij-template-render"
 version = "0.1.0"
-source = "git+https://github.com/zenobi-us/zellij-plugins?rev=1594af880c1094bbb5bd4df6aa525f509a39092c#1594af880c1094bbb5bd4df6aa525f509a39092c"
+source = "git+https://github.com/zenobi-us/zellij-plugins?rev=7156a80fab6f1340a3d6906f9bacfa228f0cfd1a#7156a80fab6f1340a3d6906f9bacfa228f0cfd1a"
 dependencies = [
  "chrono",
  "chrono-tz",
  "minijinja",
  "unicode-width",
+ "zellij-tile",
 ]
 
 [[package]]
 name = "zellij-tile"
-version = "0.44.0"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28e99d5eb7fb1f4701c10d957ae90e7ffa2da714b0dc9d6569b2a20704bc454e"
+checksum = "117cdb1e488beee0a34aa11e108142b082b0c13a7fca165dc624a9ffb808db42"
 dependencies = [
  "clap",
  "prost",

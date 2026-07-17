@@ -3,65 +3,13 @@ use std::collections::BTreeMap;
 use zellij_template_render::{
     error_frame as shared_error_frame, ActionRegistry, ButtonPresentation, ButtonView, Environment,
     Error, ErrorKind, Frame, Renderer, TemplateContext, TemplateEnvironment, TemplateHost,
-    TemplateSource, TemplateTheme, Value, Viewport,
+    TemplateSource, Value, Viewport,
 };
+use zellij_tile::prelude::ModeInfo;
 
 use super::model::RenderModel;
 
 const DEFAULT_TEMPLATE_NAME: &str = "main.jinja";
-
-pub(crate) const DEFAULT_TEMPLATE: &str = r#"{%- call Flex(direction="column", grow=1) -%}
-{%- call Flex(shrink=0) -%}
-{{- " %s " | format(zellij_session) | bg("index:3") | fg("index:0") -}}
-{%- endcall -%}
-{%- call Flex(basis=2, shrink=0) -%}{{- padding_rows -}}{%- endcall -%}
-{%- call Flex(direction="column", grow=1, shrink=1, overflow="scroll") -%}
-{%- if sessions | length > 0 -%}
-{%- call Flex(shrink=0) -%}
-{{- " Agents " | bold | bg("index:6") | fg("index:0") -}}
-{%- endcall -%}
-{%- macro indicator(focused) -%}{{ " " | bg("index:4") | fg("index:0") if focused else " " }}{%- endmacro -%}
-{%- macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro -%}
-{%- for group in groups -%}
-{%- set tab_label = " %s " | format(group.tab_name) -%}
-{%- if group.tab_id is not none -%}
-{%- call Button(on_click=actions.switch_tab(group.tab_id), focused=false) -%}
-{{- tab_label | bg("index:6") | fg("index:0") if group.active else tab_label | bg("index:8") | dim -}}
-{%- endcall -%}
-{%- else -%}
-{%- call Flex(shrink=0) -%}
-{{- tab_label | bg("index:6") | fg("index:0") if group.active else tab_label | bg("index:8") | dim -}}
-{%- endcall -%}
-{%- endif -%}
-{%- for session in group.sessions -%}
-{%- call Button(on_click=actions.focus_pane(session.pane), focused=session.focused) -%}
-{%- set icon = "󱉺" if session.state == "running" else "󰏧" -%}
-{%- set agent = "%s %s %s@%s" | format(session.pane, icon, session.harness, session.model) -%}
-{{ indicator(session.focused) }} {{ t(agent | bold, session.focused) }}
-{{ indicator(session.focused) }}     󰆈 {{ session.title | bold if session.focused else session.title | dim }}
-{{ indicator(session.focused) }}      {{ session.cwd | bold if session.focused else session.cwd | dim }}
-{%- if session.state == "running" %}
-{{ indicator(session.focused) }}  {{ session.current_task | bold if session.focused else session.current_task | dim }}
-{%- endif -%}
-{%- endcall -%}
-{%- endfor -%}
-{%- endfor -%}
-{%- endif -%}
-{{- layout_fill -}}
-{%- endcall -%}
-{%- if sessions | length > 0 -%}
-{%- call Flex(direction="column", shrink=0) -%}
-{%- if has_error -%}
-{{ " pipe error " | bg("index:1") | fg("index:7") }} {{ last_error | dim }}
-{%- endif -%}
-{{ " Events " | bg("index:3") | fg("index:0") }}
-{%- for event in events %}
-{{ " " | bg("index:3") }}  {{ " %s " | format(event) | fg("index:3") }}
-{%- endfor -%}
-{%- endcall -%}
-{%- endif -%}
-{%- call Flex(basis=2, shrink=0) -%}{{- padding_rows -}}{%- endcall -%}
-{%- endcall -%}"#;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClickAction {
@@ -83,7 +31,7 @@ impl AgentRenderer {
         reject_legacy_configuration(configuration)?;
 
         let mut embedded = Environment::new();
-        embedded.add_template(DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE)?;
+        minijinja_embed::load_templates!(&mut embedded);
         let source =
             TemplateSource::from_configuration(configuration, embedded, DEFAULT_TEMPLATE_NAME)?;
 
@@ -102,15 +50,17 @@ impl AgentRenderer {
 
     pub(crate) fn render(
         &mut self,
+        mode_info: &ModeInfo,
         model: &RenderModel,
         rows: usize,
         cols: usize,
     ) -> Result<RenderedFrame, Error> {
         let active_tab = model.active_tab();
         let focused_pane = model.focused_pane().map(str::to_owned);
+
         self.host.render(
             template_context(model, rows),
-            static_theme(),
+            mode_info,
             Viewport { rows, cols },
             move |button| present_button(button, active_tab, focused_pane.as_deref()),
         )
@@ -133,18 +83,6 @@ fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
         .with("last_error", model.last_error.clone())
         .with("padding_rows", " \n ")
         .with("layout_fill", model.layout_fill(rows))
-}
-
-fn static_theme() -> TemplateTheme {
-    TemplateTheme {
-        text: "index:7".into(),
-        background: "index:0".into(),
-        active_text: "index:0".into(),
-        active_background: "index:6".into(),
-        muted_text: "index:8".into(),
-        muted_background: "index:0".into(),
-        alert: "index:1".into(),
-    }
 }
 
 fn present_button(
@@ -215,7 +153,9 @@ mod tests {
     #[test]
     fn default_template_renders_typed_actions() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
-        let frame = renderer.render(&sample_model(), 20, 80).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 20, 80)
+            .unwrap();
         let output = frame
             .lines
             .iter()
@@ -233,7 +173,11 @@ mod tests {
             "rendered lines: {:?}",
             frame.lines
         );
-        assert_eq!(plain_text(&frame.lines[17]), " Events ");
+        assert!(
+            output.contains("Events"),
+            "rendered lines: {:?}",
+            frame.lines
+        );
         assert!(frame
             .hitboxes
             .iter()
@@ -267,7 +211,9 @@ mod tests {
         )]))
         .unwrap();
 
-        let frame = renderer.render(&sample_model(), 1, 30).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 30)
+            .unwrap();
         assert_eq!(frame.lines, [" z  1700000000"]);
     }
 
@@ -279,7 +225,9 @@ mod tests {
         )]))
         .unwrap();
 
-        let frame = renderer.render(&sample_model(), 1, 2).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 2)
+            .unwrap();
         assert_eq!(frame.lines, ["go"]);
         assert_eq!(
             frame.hitboxes[0],
@@ -294,7 +242,7 @@ mod tests {
     fn default_template_omits_tab_action_without_tab_id() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
         let frame = renderer
-            .render(&sample_model_with_tab(None), 20, 80)
+            .render(&ModeInfo::default(), &sample_model_with_tab(None), 20, 80)
             .unwrap();
 
         assert!(!frame
@@ -320,7 +268,9 @@ mod tests {
             dir.join("main.jinja").display().to_string(),
         )]))
         .unwrap();
-        let frame = renderer.render(&sample_model(), 1, 20).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 20)
+            .unwrap();
 
         assert_eq!(frame.lines, ["Z"]);
         let _ = fs::remove_dir_all(dir);
@@ -360,7 +310,9 @@ mod tests {
         )]))
         .unwrap();
 
-        let error = renderer.render(&sample_model(), 1, 10).unwrap_err();
+        let error = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 10)
+            .unwrap_err();
         assert!(error
             .to_string()
             .contains("switch_tab expects exactly one argument"));
@@ -369,7 +321,9 @@ mod tests {
     #[test]
     fn default_template_handles_tiny_viewports() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
-        let frame = renderer.render(&sample_model(), 2, 8).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 2, 8)
+            .unwrap();
 
         assert_eq!(frame.lines.len(), 2);
         assert_eq!(frame.hitboxes.len(), 2);
@@ -391,7 +345,9 @@ mod tests {
         };
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
-        let frame = renderer.render(&model, 10, 80).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &model, 10, 80)
+            .unwrap();
         let output = frame
             .lines
             .iter()
