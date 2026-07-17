@@ -4,14 +4,29 @@ layout {
             plugin location="tab-bar"
         }
         pane split_direction="vertical" {
-            pane {
+            pane size=32{
                 plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
             }
-            pane split_direction="horizontal" {
+            pane {
                 children
             }
         }
     }
+
+    new_tab_template {
+        pane size=1 {
+            plugin location="tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane size=32{
+                plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+            }
+            pane {
+                children
+            }
+        }
+    }
+
 }
 
 session_serialization false
