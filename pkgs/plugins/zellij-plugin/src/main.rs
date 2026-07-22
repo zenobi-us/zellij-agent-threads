@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use zellij_tile::prelude::*;
 
@@ -46,7 +46,9 @@ impl ZellijPlugin for PluginState {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = PluginConfig::parse(&configuration);
         self.renderer_configuration = configuration.clone();
-        self.initialize_renderer();
+        if !configuration.contains_key("template_file") {
+            self.initialize_renderer();
+        }
         set_selectable(true);
         let mut permissions = vec![
             PermissionType::ReadApplicationState,
@@ -56,7 +58,6 @@ impl ZellijPlugin for PluginState {
         if configuration.contains_key("template_file") {
             permissions.push(PermissionType::FullHdAccess);
         }
-        request_permission(&permissions);
         subscribe(&[
             EventType::Mouse,
             EventType::ModeUpdate,
@@ -65,7 +66,10 @@ impl ZellijPlugin for PluginState {
             EventType::TabUpdate,
             EventType::SessionUpdate,
             EventType::PermissionRequestResult,
+            EventType::HostFolderChanged,
+            EventType::FailedToChangeHostFolder,
         ]);
+        request_permission(&permissions);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
         self.runtime.load();
     }
@@ -136,13 +140,38 @@ impl ZellijPlugin for PluginState {
                 tab_changed || focus_changed
             }
             Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
-            Event::PermissionRequestResult(_) => {
-                if self.renderer.is_none()
-                    && self.renderer_configuration.contains_key("template_file")
-                {
-                    self.initialize_renderer();
+            Event::PermissionRequestResult(status) => {
+                if self.renderer_configuration.contains_key("template_file") {
+                    match status {
+                        PermissionStatus::Granted => change_host_folder(PathBuf::from("/")),
+                        PermissionStatus::Denied => {
+                            self.renderer = None;
+                            self.template_error = Some(TemplateError::new(
+                                zellij_template_render::ErrorKind::InvalidOperation,
+                                "template_file requires FullHdAccess permission",
+                            ));
+                        }
+                    }
                 }
                 set_selectable(false);
+                true
+            }
+            Event::HostFolderChanged(_) => {
+                if self.renderer_configuration.contains_key("template_file") {
+                    self.initialize_renderer();
+                    true
+                } else {
+                    false
+                }
+            }
+            Event::FailedToChangeHostFolder(error)
+                if self.renderer_configuration.contains_key("template_file") =>
+            {
+                self.renderer = None;
+                self.template_error = Some(TemplateError::new(
+                    zellij_template_render::ErrorKind::InvalidOperation,
+                    error.unwrap_or_else(|| "failed to mount host filesystem".into()),
+                ));
                 true
             }
             _ => false,

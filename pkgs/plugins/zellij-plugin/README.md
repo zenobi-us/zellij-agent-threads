@@ -51,6 +51,22 @@ plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
 `FullHdAccess`. Includes/imports load lazily and remain cached until plugin reload. External
 templates are trusted and can read files exposed to the plugin through `/host`.
 
+Use a resolved absolute path for symlinked configuration trees:
+
+```bash
+readlink -f ~/.config/zellij/plugins/agent-threads/main.jinja
+```
+
+See `demo-external.kdl`. After building, verify an agent-threads template that renders
+`session.title`:
+
+```bash
+python3 scripts/check-external-template.py --template-file "$(readlink -f /path/to/main.jinja)"
+```
+
+For another template shape, pass `--expect TEXT` and make the template render that injected
+session title.
+
 Interactive entries use typed actions:
 
 ```jinja
