@@ -31,7 +31,7 @@ moon run zellij-plugin:install
 ```
 
 This builds plugin for `wasm32-wasip1`, copies it to
-`~/.config/zellij/plugins/zellij-agent-threads.wasm`, and links Pi extension at
+`~/.config/zellij/plugins/agent-threads.wasm`, and links Pi extension at
 `~/.pi/agent/extensions/zellij-agent`.
 
 Add plugin to Zellij layout:
@@ -39,7 +39,7 @@ Add plugin to Zellij layout:
 ```kdl
 layout {
     pane {
-        plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm"
+        plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm"
     }
 }
 ```
@@ -66,7 +66,7 @@ template in layout configuration. This small panel displays session name and
 agent count:
 
 ```kdl
-plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm" {
+plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm" {
     template "{{ zellij_session }}: {{ sessions | length }} agents"
 }
 ```
@@ -77,7 +77,7 @@ until plugin reload. External templates are trusted and can read files exposed
 to the plugin through `/host`.
 
 ```kdl
-plugin location="file:/home/you/.config/zellij/plugins/zellij-agent-threads.wasm" {
+plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm" {
     template_file "/home/you/.config/zellij-agent-threads/templates/main.jinja"
 }
 ```

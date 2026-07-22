@@ -1,10 +1,10 @@
 layout {
     default_tab_template {
-        pane size=1 {
+        pane size=1 borderless=true {
             plugin location="tab-bar"
         }
         pane split_direction="vertical" {
-            pane size=32{
+            pane size=48 borderless=true {
                 plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
             }
             pane {
@@ -14,11 +14,11 @@ layout {
     }
 
     new_tab_template {
-        pane size=1 {
+        pane size=1 borderless=true {
             plugin location="tab-bar"
         }
         pane split_direction="vertical" {
-            pane size=32{
+            pane size=48 borderless=true {
                 plugin location="file:target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
             }
             pane {

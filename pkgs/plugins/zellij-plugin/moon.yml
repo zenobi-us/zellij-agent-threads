@@ -57,7 +57,7 @@ tasks:
       echo "Starting Zellij demo session with zellij-agent-threads plugin"
       command -v zellij >/dev/null || { echo "zellij is required" >&2; exit 1; }
       command -v ghostty >/dev/null || { echo "ghostty is required" >&2; exit 1; }
-      layout_path="$PWD/demo.kdl"
+      layout_path="$PWD/demo-external.kdl"
       ghostty "+new-window" -e env \
         zellij \
           --new-session-with-layout "$layout_path"
@@ -77,7 +77,7 @@ tasks:
       - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
     script: |
       set -euo pipefail
-      plugin_path="$HOME/.config/zellij/plugins/zellij-agent-threads.wasm"
+      plugin_path="$HOME/.config/zellij/plugins/agent-threads.wasm"
       mkdir -p "$(dirname "$plugin_path")"
       ls -al ./target/wasm32-wasip1/release
       cp "./target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm" "$plugin_path"
