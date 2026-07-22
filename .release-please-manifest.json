@@ -1,4 +1,4 @@
 {
-  "apps/docs": "0.0.1",
-  "pkgs/plugins/zellij-plugin": "0.1.0"
+  "apps/docs": "0.0.2",
+  "pkgs/plugins/zellij-plugin": "0.1.1"
 }
