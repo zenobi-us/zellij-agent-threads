@@ -1,5 +1,8 @@
 # Zellij Agent Threads
 
+<img width="285" height="309" alt="image" src="https://github.com/user-attachments/assets/1cfe2b1d-23b1-491a-8fbe-ce973aefe676" />
+
+
 > ![WARNING]
 > This project is in early development. It is not yet stable and may change
 
