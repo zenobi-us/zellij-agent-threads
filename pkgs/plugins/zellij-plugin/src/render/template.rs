@@ -153,6 +153,8 @@ mod tests {
 
     use super::*;
 
+    const SPINNER_FRAMES: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+
     #[test]
     fn default_template_renders_typed_actions() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
@@ -177,6 +179,14 @@ mod tests {
             frame.lines
         );
         assert!(output.contains("bash"), "rendered lines: {:?}", frame.lines);
+        assert!(
+            SPINNER_FRAMES.chars().any(|icon| output.contains(icon)),
+            "rendered lines: {:?}",
+            frame.lines
+        );
+        assert!(frame.refresh_after.is_some_and(|delay| {
+            !delay.is_zero() && delay <= std::time::Duration::from_millis(125)
+        }));
         assert!(
             output.contains("Events"),
             "rendered lines: {:?}",
@@ -205,6 +215,34 @@ mod tests {
             })
             .unwrap();
         assert!(pane_row > 0);
+    }
+
+    #[test]
+    fn idle_sessions_do_not_request_animation_refresh() {
+        let mut idle = agent_session("s", "1", "Idle");
+        idle.state = AgentState::Idle;
+        idle.current_tool = None;
+        let runtime = RuntimeState {
+            sessions: BTreeMap::from([("s".into(), idle)]),
+            focused_pane: Some("1".into()),
+            active_tab: Some(7),
+            zellij_session: Some("z".into()),
+            ..RuntimeState::default()
+        };
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &model, 20, 80)
+            .unwrap();
+        let output = frame
+            .lines
+            .iter()
+            .map(|line| plain_text(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(frame.refresh_after, None);
+        assert!(!SPINNER_FRAMES.chars().any(|icon| output.contains(icon)));
     }
 
     #[test]

@@ -3,8 +3,13 @@ import { spawn } from "node:child_process";
 import type { StatusWidget, StatusValues } from "./status.js";
 import type { LogService } from "./log.js";
 
-export const PIPE_NAME = "zellij-agent-threads";
+export const PLUGIN_ALIAS = "agent-threads";
+export const PIPE_NAME = "agenthreads:agent";
 export const REFRESH_MS = 2_000;
+
+export function pluginPipeArgs(payload: string): string[] {
+  return ["pipe", "--plugin", PLUGIN_ALIAS, "--name", PIPE_NAME, "--", payload];
+}
 
 export type AgentState = "idle" | "running" | "shutdown";
 
@@ -160,7 +165,7 @@ export class ZellijPublisher {
    */
   pipeToPlugin(payload: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("zellij", ["pipe", "--name", PIPE_NAME, "--", payload], {
+      const child = spawn("zellij", pluginPipeArgs(payload), {
         stdio: "ignore",
       });
 

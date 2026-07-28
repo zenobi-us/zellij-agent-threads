@@ -2,7 +2,19 @@ import { expect, test } from "bun:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { LogService } from "./log.js";
 import type { StatusWidget } from "./status.js";
-import { parsePaneTabInfo, ZellijPublisher } from "./zellij.js";
+import { parsePaneTabInfo, pluginPipeArgs, ZellijPublisher } from "./zellij.js";
+
+test("publisher targets the configured plugin alias", () => {
+  expect(pluginPipeArgs("payload")).toEqual([
+    "pipe",
+    "--plugin",
+    "agent-threads",
+    "--name",
+    "agenthreads:agent",
+    "--",
+    "payload",
+  ]);
+});
 
 test("parsePaneTabInfo ignores empty zellij output", () => {
   expect(parsePaneTabInfo("", "1")).toBeUndefined();

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
 /// Name of the Zellij pipe that receives Pi agent session reports.
-pub(crate) const PIPE_NAME: &str = "zellij-agent-threads";
+pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
 
 /// Mutable state for one running plugin instance.
 ///
@@ -77,7 +77,7 @@ impl RuntimeState {
     /// end of a pipe stream. Bad payloads are consumed and recorded as runtime
     /// errors because retrying the same malformed message cannot help.
     pub(crate) fn handle_pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        if pipe_message.name != PIPE_NAME {
+        if pipe_message.name != AGENT_PIPE_NAME {
             return false;
         }
 
@@ -298,7 +298,7 @@ mod tests {
     fn pipe_message(payload: AgentSession) -> PipeMessage {
         PipeMessage {
             source: PipeSource::Cli("test".into()),
-            name: PIPE_NAME.into(),
+            name: AGENT_PIPE_NAME.into(),
             payload: Some(serde_json::to_string(&payload).unwrap()),
             args: BTreeMap::new(),
             is_private: false,
@@ -314,6 +314,16 @@ mod tests {
         assert!(!runtime.handle_pipe(message));
         assert_eq!(runtime.pipe_count, 0);
         assert!(runtime.last_error.is_none());
+    }
+
+    #[test]
+    fn unnamespaced_agent_pipe_name_is_rejected() {
+        let mut runtime = RuntimeState::default();
+        let mut message = pipe_message(session("a", Some("1")));
+        message.name = "agent".into();
+
+        assert!(!runtime.handle_pipe(message));
+        assert!(runtime.sessions.is_empty());
     }
 
     #[test]

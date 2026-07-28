@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix="agent-threads-template-") as tmp_dir:
                 })
                 try:
                     subprocess.run(
-                        ["zellij", "--session", session, "pipe", "--name", "zellij-agent-threads", "--", payload],
+                        ["zellij", "--session", session, "pipe", "--name", "agenthreads:agent", "--", payload],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         timeout=2,

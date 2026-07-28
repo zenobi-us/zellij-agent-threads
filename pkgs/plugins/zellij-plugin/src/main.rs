@@ -14,7 +14,77 @@ use config::PluginConfig;
 use render::{
     error_frame, paint_frame, AgentRenderer, ClickAction, RenderModel, RenderedFrame, TemplateError,
 };
-use runtime::RuntimeState;
+use runtime::{RuntimeState, AGENT_PIPE_NAME};
+
+const REFRESH_PIPE_NAME: &str = "agenthreads:refresh";
+const TOGGLE_PIPE_NAME: &str = "agenthreads:toggle";
+
+#[derive(Debug, Eq, PartialEq)]
+enum ControlPipe {
+    Refresh,
+    Toggle,
+}
+
+const TIMER_BOUNDARY_PADDING: Duration = Duration::from_millis(10);
+
+#[derive(Default)]
+struct RefreshTimer {
+    active: Option<Duration>,
+    superseded: Vec<Duration>,
+}
+
+impl RefreshTimer {
+    fn schedule(&mut self, requested: Option<Duration>) -> Option<Duration> {
+        let requested = requested? + TIMER_BOUNDARY_PADDING;
+        match self.active {
+            None => {
+                self.active = Some(requested);
+                Some(requested)
+            }
+            Some(active) if requested < active => {
+                self.superseded.push(active);
+                self.active = Some(requested);
+                Some(requested)
+            }
+            Some(_) => None,
+        }
+    }
+
+    fn expired(&mut self, elapsed_seconds: f64) -> bool {
+        let Ok(elapsed) = Duration::try_from_secs_f64(elapsed_seconds) else {
+            return false;
+        };
+        let Some(active) = self.active else {
+            if let Some((index, _)) = self
+                .superseded
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, duration)| duration.abs_diff(elapsed))
+            {
+                self.superseded.swap_remove(index);
+            }
+            return false;
+        };
+        let active_distance = active.abs_diff(elapsed);
+        let stale = self
+            .superseded
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, duration)| duration.abs_diff(elapsed));
+
+        // ponytail: Zellij timers have no IDs or cancellation. Match their elapsed duration;
+        // replace this with opaque timer IDs if Zellij adds them.
+        if let Some((index, _)) =
+            stale.filter(|(_, duration)| duration.abs_diff(elapsed) < active_distance)
+        {
+            self.superseded.swap_remove(index);
+            false
+        } else {
+            self.active = None;
+            true
+        }
+    }
+}
 
 #[derive(Default)]
 struct PluginState {
@@ -28,7 +98,7 @@ struct PluginState {
     renderer_configuration: BTreeMap<String, String>,
     pending_template: Option<PendingTemplate>,
     last_pane_manifest: Option<PaneManifest>,
-    timer_armed: bool,
+    refresh_timer: RefreshTimer,
 }
 
 struct PendingTemplate {
@@ -143,7 +213,27 @@ impl ZellijPlugin for PluginState {
     }
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
-        self.runtime.handle_pipe(pipe_message)
+        if pipe_message.name == AGENT_PIPE_NAME {
+            return self.runtime.handle_pipe(pipe_message);
+        }
+
+        match control_pipe(&pipe_message.name) {
+            Some(ControlPipe::Refresh) => {
+                if let Some(plugin_id) = self.plugin_id {
+                    reload_self(plugin_id);
+                }
+            }
+            Some(ControlPipe::Toggle) => {
+                let is_suppressed = self.plugin_id.and_then(|plugin_id| {
+                    self.last_pane_manifest
+                        .as_ref()
+                        .and_then(|manifest| plugin_is_suppressed(manifest, plugin_id))
+                });
+                set_self_visible(is_suppressed != Some(false));
+            }
+            _ => {}
+        }
+        false
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
@@ -162,11 +252,8 @@ impl ZellijPlugin for PluginState {
             );
             error_frame(&error, rows, cols)
         };
-        if !self.timer_armed {
-            if let Some(delay) = self.frame.refresh_after {
-                set_timeout((delay + Duration::from_millis(10)).as_secs_f64());
-                self.timer_armed = true;
-            }
+        if let Some(delay) = self.refresh_timer.schedule(self.frame.refresh_after) {
+            set_timeout(delay.as_secs_f64());
         }
         paint_frame(&self.frame, rows, cols);
     }
@@ -214,10 +301,7 @@ impl ZellijPlugin for PluginState {
                 tab_changed || focus_changed
             }
             Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
-            Event::Timer(_) => {
-                self.timer_armed = false;
-                true
-            }
+            Event::Timer(elapsed) => self.refresh_timer.expired(elapsed),
             Event::PermissionRequestResult(status) => {
                 if self.pending_template.is_some() {
                     match status {
@@ -278,12 +362,113 @@ fn parse_pane_id(value: &str) -> Option<PaneId> {
     value.parse().ok().map(PaneId::Terminal)
 }
 
+fn reload_self(plugin_id: u32) {
+    #[cfg(target_arch = "wasm32")]
+    reload_plugin_with_id(plugin_id);
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = plugin_id;
+}
+
+fn set_self_visible(visible: bool) {
+    #[cfg(target_arch = "wasm32")]
+    if visible {
+        show_self(false);
+    } else {
+        hide_self();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = visible;
+}
+
+fn control_pipe(name: &str) -> Option<ControlPipe> {
+    match name {
+        REFRESH_PIPE_NAME => Some(ControlPipe::Refresh),
+        TOGGLE_PIPE_NAME => Some(ControlPipe::Toggle),
+        _ => None,
+    }
+}
+
+fn plugin_is_suppressed(manifest: &PaneManifest, plugin_id: u32) -> Option<bool> {
+    manifest
+        .panes
+        .values()
+        .flatten()
+        .find(|pane| pane.is_plugin && pane.id == plugin_id)
+        .map(|pane| pane.is_suppressed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn template_config(path: &str) -> BTreeMap<String, String> {
         BTreeMap::from([("template_file".to_string(), path.to_string())])
+    }
+
+    #[test]
+    fn faster_refresh_supersedes_armed_timer() {
+        let mut timer = RefreshTimer::default();
+
+        assert_eq!(
+            timer.schedule(Some(Duration::from_secs(1))),
+            Some(Duration::from_millis(1_010))
+        );
+        assert_eq!(
+            timer.schedule(Some(Duration::from_millis(125))),
+            Some(Duration::from_millis(135))
+        );
+        assert_eq!(timer.schedule(Some(Duration::from_millis(500))), None);
+        assert_eq!(timer.active, Some(Duration::from_millis(135)));
+    }
+
+    #[test]
+    fn superseded_timer_does_not_start_second_render_loop() {
+        let mut timer = RefreshTimer::default();
+        timer.schedule(Some(Duration::from_secs(1)));
+        timer.schedule(Some(Duration::from_millis(125)));
+
+        assert!(!timer.expired(1.01));
+        assert_eq!(timer.active, Some(Duration::from_millis(135)));
+        assert!(timer.expired(0.135));
+        assert_eq!(timer.active, None);
+    }
+
+    #[test]
+    fn equal_refresh_does_not_arm_duplicate_timer() {
+        let mut timer = RefreshTimer::default();
+        assert!(timer.schedule(Some(Duration::from_millis(125))).is_some());
+        assert_eq!(timer.schedule(Some(Duration::from_millis(125))), None);
+    }
+
+    #[test]
+    fn recognizes_control_pipe_names() {
+        assert_eq!(
+            control_pipe("agenthreads:refresh"),
+            Some(ControlPipe::Refresh)
+        );
+        assert_eq!(
+            control_pipe("agenthreads:toggle"),
+            Some(ControlPipe::Toggle)
+        );
+        assert_eq!(control_pipe("unknown"), None);
+    }
+
+    #[test]
+    fn finds_plugin_suppression_state() {
+        let manifest = PaneManifest {
+            panes: std::collections::HashMap::from([(
+                0,
+                vec![PaneInfo {
+                    id: 42,
+                    is_plugin: true,
+                    is_suppressed: true,
+                    ..PaneInfo::default()
+                }],
+            )]),
+        };
+
+        assert_eq!(plugin_is_suppressed(&manifest, 42), Some(true));
+        assert_eq!(plugin_is_suppressed(&manifest, 7), None);
     }
 
     #[test]
