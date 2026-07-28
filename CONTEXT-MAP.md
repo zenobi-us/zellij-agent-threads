@@ -3,7 +3,7 @@
 ```text
 Pi extension lifecycle event
   -> JSON payload
-  -> zellij pipe --name zellij-agent-threads
+  -> zellij pipe --plugin agent-threads --name agenthreads:agent
   -> Rust Zellij plugin pipe handler
   -> in-memory session map
   -> Zellij render

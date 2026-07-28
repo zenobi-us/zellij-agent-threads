@@ -23,10 +23,38 @@ moon run zellij-plugin:check
 
 Host-target tests are used because raw `.wasm` test binaries do not execute directly on Linux without a WASI runner.
 
-## Pipe name
+## Plugin alias
 
-```text
-zellij-agent-threads
+Register the installed plugin in `~/.config/zellij/config.kdl`. Pi extension targets this alias
+with `zellij pipe --plugin agent-threads`.
+
+```kdl
+plugins {
+    agent-threads location="file:~/.config/zellij/plugins/agent-threads.wasm"
+}
+```
+
+## Pipe commands
+
+| Name | Payload | Behaviour |
+|---|---|---|
+| `agenthreads:agent` | Agent session JSON | Update rendered agent state |
+| `agenthreads:refresh` | None | Reload the plugin instance |
+| `agenthreads:toggle` | None | Hide or show the plugin pane |
+
+Example keybindings:
+
+```kdl
+bind "Alt r" {
+    MessagePlugin "agent-threads" {
+        name "agenthreads:refresh"
+    }
+}
+bind "Alt a" {
+    MessagePlugin "agent-threads" {
+        name "agenthreads:toggle"
+    }
+}
 ```
 
 ## Templates
@@ -34,7 +62,7 @@ zellij-agent-threads
 Inline MiniJinja templates use the shared `zellij-template-render` renderer:
 
 ```kdl
-plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
+plugin location="agent-threads" {
     template "{{ zellij_session }}: {{ sessions | length }} agents"
 }
 ```
@@ -42,7 +70,7 @@ plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
 For `{% include %}` / `{% import %}`, point `template_file` at the entry file:
 
 ```kdl
-plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
+plugin location="agent-threads" {
     template_file "/home/q/.config/zellij-agent-threads/templates/main.jinja"
 }
 ```
@@ -79,6 +107,20 @@ Interactive entries use typed actions:
 Layout uses nested `Flex` components. Colors passed to `fg`/`bg` use `index:N` or
 `rgb:R,G,B`. MiniJinja's normal `format` filter remains available; timestamp formatting uses
 `format_time`.
+
+`AnimationFrame(fps=...)` returns a wall-clock frame number and schedules the next render. The
+built-in template uses it at 8 FPS for running-agent icons. External templates can define the same
+pattern:
+
+```jinja
+{% set frames = ["⠋", "⠙", "⠹", "⠸"] %}
+{% if session.state == "running" %}
+  {{ frames[AnimationFrame(fps=8) % (frames | length)] }}
+{% endif %}
+```
+
+Only executed calls request another render. Frequencies must be between 1 and 20 FPS, and frames
+should have equal terminal width. Every animation frame reruns the complete template and layout.
 
 Breaking change: `template_dir`, `template_name`, `Grid`, `Stack`, `PaneButton`, `TabButton`,
 `remap`, `italic`, and the old Flex `weights`/padding props are removed.

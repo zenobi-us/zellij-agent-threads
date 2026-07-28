@@ -37,18 +37,27 @@ This builds plugin for `wasm32-wasip1`, copies it to
 `~/.config/zellij/plugins/agent-threads.wasm`, and links Pi extension at
 `~/.pi/agent/extensions/zellij-agent`.
 
-Add plugin to Zellij layout:
+Register plugin alias in `~/.config/zellij/config.kdl`. Pi extension uses this alias to direct
+session reports to one plugin instead of broadcasting them:
+
+```kdl
+plugins {
+    agent-threads location="file:~/.config/zellij/plugins/agent-threads.wasm"
+}
+```
+
+Add alias to Zellij layout:
 
 ```kdl
 layout {
     pane {
-        plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm"
+        plugin location="agent-threads"
     }
 }
 ```
 
-Replace `/home/you` with your home directory. Start Zellij using layout, then
-start Pi in any pane. Agent reports appear in plugin panel automatically.
+Start Zellij using layout, then start Pi in any pane. Agent reports appear in plugin panel
+automatically.
 
 For development, rebuild and reload whenever Rust source changes:
 
@@ -69,7 +78,7 @@ template in layout configuration. This small panel displays session name and
 agent count:
 
 ```kdl
-plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm" {
+plugin location="agent-threads" {
     template "{{ zellij_session }}: {{ sessions | length }} agents"
 }
 ```
@@ -80,7 +89,7 @@ until plugin reload. External templates are trusted and can read files exposed
 to the plugin through `/host`.
 
 ```kdl
-plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm" {
+plugin location="agent-threads" {
     template_file "/home/you/.config/zellij-agent-threads/templates/main.jinja"
 }
 ```
