@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use zellij_template_render::{
     error_frame as shared_error_frame, ActionRegistry, ButtonPresentation, ButtonView, Environment,
-    Error, ErrorKind, Frame, Renderer, TemplateContext, TemplateEnvironment, TemplateHost,
-    TemplateSource, Value, Viewport,
+    Error, ErrorKind, Frame, Renderer, TemplateContext, TemplateHost, Value, Viewport,
 };
 use zellij_tile::prelude::ModeInfo;
 
@@ -32,19 +31,17 @@ impl AgentRenderer {
 
         let mut embedded = Environment::new();
         minijinja_embed::load_templates!(&mut embedded);
-        let source =
-            TemplateSource::from_configuration(configuration, embedded, DEFAULT_TEMPLATE_NAME)?;
-
         Ok(Self {
-            host: TemplateHost::new(
+            host: TemplateHost::from_configuration(
                 Renderer::new(
                     ActionRegistry::new()
                         .with("switch_tab", decode_switch_tab)
                         .with("focus_pane", decode_focus_pane),
                 ),
-                source,
-                TemplateEnvironment::from_configuration(configuration),
-            ),
+                configuration,
+                embedded,
+                DEFAULT_TEMPLATE_NAME,
+            )?,
         })
     }
 
@@ -64,6 +61,12 @@ impl AgentRenderer {
             Viewport { rows, cols },
             move |button| present_button(button, active_tab, focused_pane.as_deref()),
         )
+    }
+
+    pub(crate) fn error_frame(&self, error: &Error, rows: usize, cols: usize) -> RenderedFrame {
+        let mut frame = shared_error_frame(error, Viewport { rows, cols });
+        frame.refresh_after = self.host.refresh_after();
+        frame
     }
 }
 
@@ -254,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn external_template_supports_includes() {
+    fn external_template_reloads_changed_includes() {
         let dir = std::env::temp_dir().join(format!(
             "zellij-agent-threads-template-test-{}",
             std::process::id()
@@ -272,8 +275,15 @@ mod tests {
         let frame = renderer
             .render(&ModeInfo::default(), &sample_model(), 1, 20)
             .unwrap();
-
         assert_eq!(frame.lines, ["Z"]);
+        assert!(frame.refresh_after.is_some());
+
+        fs::write(dir.join("part.jinja"), "reloaded").unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 20)
+            .unwrap();
+        assert_eq!(frame.lines, ["reloaded"]);
+
         let _ = fs::remove_dir_all(dir);
     }
 

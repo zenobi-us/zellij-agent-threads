@@ -54,7 +54,8 @@ plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
 External templates request Zellij `FullHdAccess`. After permission is granted, the plugin mounts
 the template's parent directory as `/host` and loads the entry from the guest root. This permits
 host-side symlink resolution without exposing the complete host filesystem. Includes and imports
-resolve relative to the entry file and remain cached until plugin reload.
+resolve relative to the entry file. The plugin polls loaded template files once per second and
+reloads them when their contents change.
 
 See `demo-external.kdl`. After building, verify an agent-threads template that renders
 `session.title`:

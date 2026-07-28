@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use zellij_tile::prelude::*;
@@ -27,6 +28,7 @@ struct PluginState {
     renderer_configuration: BTreeMap<String, String>,
     pending_template: Option<PendingTemplate>,
     last_pane_manifest: Option<PaneManifest>,
+    timer_armed: bool,
 }
 
 struct PendingTemplate {
@@ -130,6 +132,7 @@ impl ZellijPlugin for PluginState {
             EventType::PaneUpdate,
             EventType::TabUpdate,
             EventType::SessionUpdate,
+            EventType::Timer,
             EventType::PermissionRequestResult,
             EventType::HostFolderChanged,
             EventType::FailedToChangeHostFolder,
@@ -148,7 +151,7 @@ impl ZellijPlugin for PluginState {
         self.frame = if let Some(renderer) = &mut self.renderer {
             match renderer.render(&self.mode_info, &model, rows, cols) {
                 Ok(frame) => frame,
-                Err(error) => error_frame(&error, rows, cols),
+                Err(error) => renderer.error_frame(&error, rows, cols),
             }
         } else if let Some(error) = &self.template_error {
             error_frame(error, rows, cols)
@@ -159,6 +162,12 @@ impl ZellijPlugin for PluginState {
             );
             error_frame(&error, rows, cols)
         };
+        if !self.timer_armed {
+            if let Some(delay) = self.frame.refresh_after {
+                set_timeout((delay + Duration::from_millis(10)).as_secs_f64());
+                self.timer_armed = true;
+            }
+        }
         paint_frame(&self.frame, rows, cols);
     }
 
@@ -205,6 +214,10 @@ impl ZellijPlugin for PluginState {
                 tab_changed || focus_changed
             }
             Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
+            Event::Timer(_) => {
+                self.timer_armed = false;
+                true
+            }
             Event::PermissionRequestResult(status) => {
                 if self.pending_template.is_some() {
                     match status {
