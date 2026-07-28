@@ -99,7 +99,8 @@ plugin location="file:/home/you/.config/zellij/plugins/agent-threads.wasm" {
 
 Template model exposes `zellij_session`, `sessions`, `groups`, `events`,
 `has_error`, and `last_error`. Each session exposes `state`, `pane`, `cwd`,
-`model`, `title`, `harness`, `current_task`, and `focused`.
+`model`, `title`, `harness`, `current_tool`, and `focused`. `current_task`
+remains available as a deprecated alias for existing external templates.
 
 Templates use `zellij-template-render` components and typed actions:
 

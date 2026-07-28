@@ -182,7 +182,8 @@ pub(crate) struct AgentSession {
     pub(crate) state: AgentState,
     pub(crate) model: Option<String>,
     pub(crate) title: Option<String>,
-    pub(crate) current_task: Option<String>,
+    #[serde(alias = "current_task")]
+    pub(crate) current_tool: Option<String>,
     pub(crate) updated_at: u64,
 }
 
@@ -210,7 +211,7 @@ impl AgentSession {
             && self.state == other.state
             && self.model == other.model
             && self.title == other.title
-            && self.current_task == other.current_task
+            && self.current_tool == other.current_tool
     }
 }
 
@@ -289,7 +290,7 @@ mod tests {
             state: AgentState::Idle,
             model: None,
             title: None,
-            current_task: None,
+            current_tool: None,
             updated_at: 0,
         }
     }
@@ -313,6 +314,40 @@ mod tests {
         assert!(!runtime.handle_pipe(message));
         assert_eq!(runtime.pipe_count, 0);
         assert!(runtime.last_error.is_none());
+    }
+
+    #[test]
+    fn current_tool_payload_updates_rendered_activity() {
+        let payload = serde_json::json!({
+            "version": 1,
+            "harness": "pi",
+            "session": "a",
+            "cwd": "/tmp",
+            "state": "running",
+            "current_tool": "bash",
+            "updated_at": 0
+        });
+
+        let session: AgentSession = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(session.current_tool.as_deref(), Some("bash"));
+    }
+
+    #[test]
+    fn legacy_current_task_payload_remains_supported() {
+        let payload = serde_json::json!({
+            "version": 1,
+            "harness": "pi",
+            "session": "a",
+            "cwd": "/tmp",
+            "state": "running",
+            "current_task": "legacy activity",
+            "updated_at": 0
+        });
+
+        let session: AgentSession = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(session.current_tool.as_deref(), Some("legacy activity"));
     }
 
     #[test]

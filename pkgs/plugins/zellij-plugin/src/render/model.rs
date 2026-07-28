@@ -43,6 +43,8 @@ pub(super) struct SessionLine {
     title: String,
     zellij_session: String,
     harness: String,
+    current_tool: String,
+    /// Deprecated template alias retained for external template compatibility.
     current_task: String,
     focused: bool,
     active_tab: bool,
@@ -173,7 +175,8 @@ fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) ->
             .title
             .clone()
             .unwrap_or_else(|| basename(&session.cwd).into()),
-        current_task: session.current_task.clone().unwrap_or_default(),
+        current_tool: session.current_tool.clone().unwrap_or_default(),
+        current_task: session.current_tool.clone().unwrap_or_default(),
     }
 }
 
@@ -207,7 +210,7 @@ mod tests {
                     state: AgentState::Running,
                     model: Some("m".into()),
                     title: Some("First Message Title".into()),
-                    current_task: Some("Latest Task".into()),
+                    current_tool: Some("bash".into()),
                     updated_at: 0,
                 },
             )]),
@@ -236,6 +239,8 @@ mod tests {
         assert_eq!(model.zellij_session, "z");
 
         assert_eq!(model.sessions[0].harness, "pi");
+        assert_eq!(model.sessions[0].current_tool, "bash");
+        assert_eq!(model.sessions[0].current_task, "bash");
         assert_eq!(model.harness, "pi");
     }
 
@@ -257,7 +262,7 @@ mod tests {
                     state: AgentState::Running,
                     model: None,
                     title: None,
-                    current_task: None,
+                    current_tool: None,
                     updated_at: 0,
                 },
             )]),

@@ -173,6 +173,7 @@ mod tests {
             "rendered lines: {:?}",
             frame.lines
         );
+        assert!(output.contains("bash"), "rendered lines: {:?}", frame.lines);
         assert!(
             output.contains("Events"),
             "rendered lines: {:?}",
@@ -432,7 +433,7 @@ mod tests {
             state: AgentState::Running,
             model: Some("m".into()),
             title: Some(title.into()),
-            current_task: Some("Latest Task".into()),
+            current_tool: Some("bash".into()),
             updated_at: 0,
         }
     }

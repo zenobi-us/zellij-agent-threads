@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix="agent-threads-template-") as tmp_dir:
                     "state": "running",
                     "model": "test",
                     "title": expected,
-                    "current_task": "verify external template",
+                    "current_tool": "verify external template",
                     "updated_at": 0,
                 })
                 try:

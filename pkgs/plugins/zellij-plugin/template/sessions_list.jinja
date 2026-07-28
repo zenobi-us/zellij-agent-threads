@@ -25,8 +25,8 @@
       {{ indicator(session.focused) }} {{ t(agent | bold, session.focused) }}
       {{ indicator(session.focused) }}     󰆈 {{ session.title | bold if session.focused else session.title | dim }}
       {{ indicator(session.focused) }}      {{ session.cwd | bold if session.focused else session.cwd | dim }}
-      {%- if session.state == "running" %}
-        {{ indicator(session.focused) }}  {{ session.current_task | bold if session.focused else session.current_task | dim }}
+      {%- if session.state == "running" and session.current_tool %}
+        {{ indicator(session.focused) }}  {{ session.current_tool | bold if session.focused else session.current_tool | dim }}
       {%- endif -%}
       {%- endcall -%}
     {%- endfor -%}
