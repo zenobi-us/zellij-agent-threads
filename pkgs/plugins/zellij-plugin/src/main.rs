@@ -293,7 +293,7 @@ impl ZellijPlugin for PluginState {
                 focus_changed
             }
             Event::TabUpdate(tabs) => {
-                let tab_changed = self.runtime.sync_active_tab(&tabs);
+                let tab_changed = self.runtime.sync_tabs(&tabs);
                 let focus_changed = match self.last_pane_manifest.as_ref() {
                     Some(manifest) => self.runtime.sync_pane_focus(manifest),
                     None => false,

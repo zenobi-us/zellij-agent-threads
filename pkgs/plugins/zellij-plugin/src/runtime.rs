@@ -47,16 +47,29 @@ impl RuntimeState {
         true
     }
 
-    pub(crate) fn sync_active_tab(&mut self, tabs: &[zellij_tile::prelude::TabInfo]) -> bool {
+    pub(crate) fn sync_tabs(&mut self, tabs: &[zellij_tile::prelude::TabInfo]) -> bool {
         let active = tabs.iter().find(|tab| tab.active);
         let active_tab = active.map(|tab| tab.tab_id);
         let active_position = active.map(|tab| tab.position);
-        if self.active_tab == active_tab && self.active_tab_position == active_position {
-            return false;
-        }
+        let mut changed =
+            self.active_tab != active_tab || self.active_tab_position != active_position;
         self.active_tab = active_tab;
         self.active_tab_position = active_position;
-        true
+
+        for session in self.sessions.values_mut() {
+            let Some(tab) = session
+                .tab_id
+                .and_then(|tab_id| tabs.iter().find(|tab| tab.tab_id == tab_id))
+            else {
+                continue;
+            };
+            if session.tab_name.as_deref() != Some(tab.name.as_str()) {
+                session.tab_name = Some(tab.name.clone());
+                changed = true;
+            }
+        }
+
+        changed
     }
 
     pub(crate) fn sync_current_session(&mut self, sessions: &[SessionInfo]) -> bool {
@@ -529,9 +542,35 @@ mod tests {
             ..Default::default()
         }];
 
-        assert!(runtime.sync_active_tab(&tabs));
+        assert!(runtime.sync_tabs(&tabs));
         assert_eq!(runtime.active_tab, Some(3));
         assert_eq!(runtime.active_tab_position, Some(0));
-        assert!(!runtime.sync_active_tab(&tabs));
+        assert!(!runtime.sync_tabs(&tabs));
+    }
+
+    #[test]
+    fn tab_rename_requests_render_and_updates_session() {
+        let mut runtime = RuntimeState::default();
+        let mut agent = session("a", Some("1"));
+        agent.tab_id = Some(3);
+        agent.tab_name = Some("old".into());
+        runtime.sessions.insert(agent.cache_key(), agent);
+
+        let old = vec![zellij_tile::prelude::TabInfo {
+            tab_id: 3,
+            name: "old".into(),
+            active: true,
+            ..Default::default()
+        }];
+        assert!(runtime.sync_tabs(&old));
+        assert!(!runtime.sync_tabs(&old));
+
+        let renamed = vec![zellij_tile::prelude::TabInfo {
+            name: "renamed".into(),
+            ..old[0].clone()
+        }];
+        assert!(runtime.sync_tabs(&renamed));
+        assert_eq!(runtime.sessions["1"].tab_name.as_deref(), Some("renamed"));
+        assert!(!runtime.sync_tabs(&renamed));
     }
 }
