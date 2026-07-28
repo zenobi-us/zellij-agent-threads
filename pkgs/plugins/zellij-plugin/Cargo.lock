@@ -2586,7 +2586,7 @@ dependencies = [
 [[package]]
 name = "zellij-template-render"
 version = "0.1.0"
-source = "git+https://github.com/zenobi-us/zellij-plugins?rev=7156a80fab6f1340a3d6906f9bacfa228f0cfd1a#7156a80fab6f1340a3d6906f9bacfa228f0cfd1a"
+source = "git+https://github.com/zenobi-us/zellij-plugins?rev=1fd4f483a728708bd54a662deffd6a5206beb850#1fd4f483a728708bd54a662deffd6a5206beb850"
 dependencies = [
  "chrono",
  "chrono-tz",

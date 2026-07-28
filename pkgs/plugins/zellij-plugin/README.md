@@ -47,21 +47,20 @@ plugin location="file:/path/to/zellij-plugin-agent-threads.wasm" {
 }
 ```
 
-`template` and `template_file` are mutually exclusive. External templates request Zellij
-`FullHdAccess`. Includes/imports load lazily and remain cached until plugin reload. External
-templates are trusted and can read files exposed to the plugin through `/host`.
+`template` and `template_file` are mutually exclusive. `template_file` accepts absolute paths,
+`~/...`, and relative paths such as `./templates/main.jinja`. Relative paths use
+`${ZELLIJ_CONFIG_DIR:-$HOME/.config/zellij}`.
 
-Use a resolved absolute path for symlinked configuration trees:
-
-```bash
-readlink -f ~/.config/zellij/plugins/agent-threads/main.jinja
-```
+External templates request Zellij `FullHdAccess`. After permission is granted, the plugin mounts
+the template's parent directory as `/host` and loads the entry from the guest root. This permits
+host-side symlink resolution without exposing the complete host filesystem. Includes and imports
+resolve relative to the entry file and remain cached until plugin reload.
 
 See `demo-external.kdl`. After building, verify an agent-threads template that renders
 `session.title`:
 
 ```bash
-python3 scripts/check-external-template.py --template-file "$(readlink -f /path/to/main.jinja)"
+python3 scripts/check-external-template.py --template-file ~/.config/zellij/templates/main.jinja
 ```
 
 For another template shape, pass `--expect TEXT` and make the template render that injected

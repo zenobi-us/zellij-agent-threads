@@ -11,7 +11,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 minijinja = "2.21"
 minijinja-embed = "2.21"
-zellij-template-render = { git = "https://github.com/zenobi-us/zellij-plugins", rev = "7156a80fab6f1340a3d6906f9bacfa228f0cfd1a" }
+zellij-template-render = { git = "https://github.com/zenobi-us/zellij-plugins", rev = "1fd4f483a728708bd54a662deffd6a5206beb850" }
 
 [build-dependencies]
 minijinja-embed = "2.21"
