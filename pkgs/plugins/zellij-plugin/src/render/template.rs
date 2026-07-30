@@ -13,6 +13,7 @@ const DEFAULT_TEMPLATE_NAME: &str = "main.jinja";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClickAction {
     SwitchTab { tab: u32 },
+    SwitchToSession { session: String },
     FocusPane { pane: String },
 }
 
@@ -36,6 +37,7 @@ impl AgentRenderer {
                 Renderer::new(
                     ActionRegistry::new()
                         .with("switch_tab", decode_switch_tab)
+                        .with("switch_to_session", decode_switch_to_session)
                         .with("focus_pane", decode_focus_pane),
                 ),
                 configuration,
@@ -53,13 +55,16 @@ impl AgentRenderer {
         cols: usize,
     ) -> Result<RenderedFrame, Error> {
         let active_tab = model.active_tab();
+        let active_session = model.zellij_session.clone();
         let focused_pane = model.focused_pane().map(str::to_owned);
 
         self.host.render(
             template_context(model, rows),
             mode_info,
             Viewport { rows, cols },
-            move |button| present_button(button, active_tab, focused_pane.as_deref()),
+            move |button| {
+                present_button(button, active_tab, &active_session, focused_pane.as_deref())
+            },
         )
     }
 
@@ -78,6 +83,7 @@ fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
     TemplateContext::new()
         .with("empty_message", model.empty_message.clone())
         .with("agents", Value::from_serialize(&model.agents))
+        .with("sessions", Value::from_serialize(&model.sessions))
         .with("zellij_session", model.zellij_session.clone())
         .with("harness", model.harness.clone())
         .with("tabs", Value::from_serialize(&model.tabs))
@@ -91,10 +97,12 @@ fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
 fn present_button(
     button: ButtonView<'_, ClickAction>,
     active_tab: Option<u32>,
+    active_session: &str,
     focused_pane: Option<&str>,
 ) -> Result<ButtonPresentation, Error> {
     let focused = button.focused.unwrap_or_else(|| match button.action {
         ClickAction::SwitchTab { tab } => active_tab == Some(*tab),
+        ClickAction::SwitchToSession { session } => active_session == session,
         ClickAction::FocusPane { pane } => focused_pane == Some(pane.as_str()),
     });
     Ok(ButtonPresentation {
@@ -109,6 +117,16 @@ fn decode_switch_tab(args: &[Value]) -> Result<ClickAction, Error> {
         .and_then(|tab| u32::try_from(tab).ok())
         .ok_or_else(|| invalid_action("switch_tab expects one unsigned 32-bit integer"))?;
     Ok(ClickAction::SwitchTab { tab })
+}
+
+fn decode_switch_to_session(args: &[Value]) -> Result<ClickAction, Error> {
+    let session = one_argument(args, "switch_to_session")?
+        .as_str()
+        .filter(|session| !session.is_empty())
+        .ok_or_else(|| invalid_action("switch_to_session expects one non-empty session name"))?;
+    Ok(ClickAction::SwitchToSession {
+        session: session.to_owned(),
+    })
 }
 
 fn decode_focus_pane(args: &[Value]) -> Result<ClickAction, Error> {
@@ -149,7 +167,7 @@ mod tests {
     use std::fs;
 
     use crate::config::RenderConfig;
-    use crate::runtime::{AgentReport, AgentState, RuntimeState};
+    use crate::runtime::{AgentReport, AgentState, RuntimeState, ZellijSession};
 
     use super::*;
 
@@ -272,6 +290,77 @@ mod tests {
             .render(&ModeInfo::default(), &sample_model(), 1, 30)
             .unwrap();
         assert_eq!(frame.lines, ["1/1/1"]);
+    }
+
+    #[test]
+    fn inline_template_uses_sessions_contract() {
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
+            "template".into(),
+            "{{ sessions[0].generation_id }} {{ sessions[0].name }} {{ sessions[0].status }} {{ sessions[0].agent_count }} {{ sessions[0].connected_client_count }} {{ sessions[0].tab_count }} {{ sessions[0].pane_count }} {{ sessions[0].created_at_seconds }}".into(),
+        )]))
+        .unwrap();
+
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model_with_sessions(), 1, 80)
+            .unwrap();
+        assert_eq!(frame.lines, ["z:10 z current 1 1 2 3 10"]);
+    }
+
+    #[test]
+    fn inline_template_builds_switch_session_hitboxes() {
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
+            "template".into(),
+            "{% call Button(on_click=actions.switch_to_session(\"other\")) %}go{% endcall %}"
+                .into(),
+        )]))
+        .unwrap();
+
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model_with_sessions(), 1, 2)
+            .unwrap();
+        assert_eq!(frame.lines, ["go"]);
+        assert_eq!(
+            frame.hitboxes[0],
+            [
+                Some(ClickAction::SwitchToSession {
+                    session: "other".into()
+                }),
+                Some(ClickAction::SwitchToSession {
+                    session: "other".into()
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn default_template_renders_session_list_with_current_session_not_clickable() {
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model_with_sessions(), 24, 100)
+            .unwrap();
+        let output = frame
+            .lines
+            .iter()
+            .map(|line| plain_text(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(output.find("Sessions") < output.find("Agents"));
+        assert!(output.contains("z current 1a 1c 2t 3p"));
+        assert!(output.contains("other active 0c 0t 0p"));
+        assert!(!output.contains("other active 0a"));
+        assert!(frame.hitboxes.iter().flatten().any(|action| {
+            matches!(
+                action,
+                Some(ClickAction::SwitchToSession { session }) if session == "other"
+            )
+        }));
+        assert!(!frame.hitboxes.iter().flatten().any(|action| {
+            matches!(
+                action,
+                Some(ClickAction::SwitchToSession { session }) if session == "z"
+            )
+        }));
     }
 
     #[test]
@@ -464,6 +553,51 @@ mod tests {
 
     fn sample_model() -> RenderModel {
         sample_model_with_tab(Some(7))
+    }
+
+    fn sample_model_with_sessions() -> RenderModel {
+        let runtime = RuntimeState {
+            agents: BTreeMap::from([(
+                "s".into(),
+                AgentReport {
+                    tab_id: Some(7),
+                    title: Some("First Message Title".into()),
+                    ..agent_session("s", "1", "First Message Title")
+                },
+            )]),
+            focused_pane: Some("1".into()),
+            active_tab: Some(7),
+            tabs: BTreeMap::from([(7, "Agents".into())]),
+            zellij_session: Some("z".into()),
+            zellij_sessions: BTreeMap::from([
+                (
+                    "z:10".into(),
+                    ZellijSession {
+                        generation_id: "z:10".into(),
+                        name: "z".into(),
+                        connected_client_count: 1,
+                        tab_count: 2,
+                        pane_count: 3,
+                        created_at_seconds: 10,
+                        current: true,
+                    },
+                ),
+                (
+                    "other:20".into(),
+                    ZellijSession {
+                        generation_id: "other:20".into(),
+                        name: "other".into(),
+                        connected_client_count: 0,
+                        tab_count: 0,
+                        pane_count: 0,
+                        created_at_seconds: 20,
+                        current: false,
+                    },
+                ),
+            ]),
+            ..RuntimeState::default()
+        };
+        RenderModel::from_runtime(&runtime, &RenderConfig::default())
     }
 
     fn sample_model_with_tab(tab_id: Option<usize>) -> RenderModel {

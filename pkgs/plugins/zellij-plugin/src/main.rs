@@ -275,6 +275,10 @@ impl ZellijPlugin for PluginState {
                     switch_tab_to(tab);
                     true
                 }
+                Some(ClickAction::SwitchToSession { session }) => {
+                    switch_session(Some(&session));
+                    true
+                }
                 Some(ClickAction::FocusPane { pane }) => {
                     if let Some(pane_id) = parse_pane_id(&pane) {
                         focus_pane_with_id(pane_id, false, false);
@@ -300,7 +304,7 @@ impl ZellijPlugin for PluginState {
                 };
                 tab_changed || focus_changed
             }
-            Event::SessionUpdate(sessions, _) => self.runtime.sync_current_session(&sessions),
+            Event::SessionUpdate(sessions, _) => self.runtime.sync_zellij_sessions(&sessions),
             Event::Timer(elapsed) => self.refresh_timer.expired(elapsed),
             Event::PermissionRequestResult(status) => {
                 if self.pending_template.is_some() {

@@ -4,7 +4,10 @@
 //! state transitions behind a small interface so the callback glue stays boring.
 //! It also owns the pipe payload schema used by the Pi extension.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
@@ -20,6 +23,7 @@ pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
 #[derive(Default)]
 pub(crate) struct RuntimeState {
     pub(crate) agents: BTreeMap<String, AgentReport>,
+    pub(crate) zellij_sessions: BTreeMap<String, ZellijSession>,
     pub(crate) tabs: BTreeMap<usize, String>,
     pub(crate) events: VecDeque<String>,
     pub(crate) pipe_count: u64,
@@ -28,6 +32,18 @@ pub(crate) struct RuntimeState {
     pub(crate) active_tab: Option<usize>,
     pub(crate) active_tab_position: Option<usize>,
     pub(crate) zellij_session: Option<String>,
+}
+
+/// One native Zellij session generation reported by `SessionUpdate`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ZellijSession {
+    pub(crate) generation_id: String,
+    pub(crate) name: String,
+    pub(crate) connected_client_count: usize,
+    pub(crate) tab_count: usize,
+    pub(crate) pane_count: usize,
+    pub(crate) created_at_seconds: u64,
+    pub(crate) current: bool,
 }
 
 impl RuntimeState {
@@ -79,15 +95,20 @@ impl RuntimeState {
         changed
     }
 
-    pub(crate) fn sync_current_session(&mut self, sessions: &[SessionInfo]) -> bool {
+    pub(crate) fn sync_zellij_sessions(&mut self, sessions: &[SessionInfo]) -> bool {
         let current = sessions
             .iter()
             .find(|session| session.is_current_session)
             .map(|session| session.name.clone());
-        if self.zellij_session == current {
+        let next_sessions = sessions
+            .iter()
+            .map(native_session)
+            .collect::<BTreeMap<_, _>>();
+        if self.zellij_session == current && self.zellij_sessions == next_sessions {
             return false;
         }
         self.zellij_session = current;
+        self.zellij_sessions = next_sessions;
         true
     }
 
@@ -287,6 +308,26 @@ fn pane_id_matches(session_pane_id: &str, pane_id: PaneId) -> bool {
     }
 }
 
+fn native_session(session: &SessionInfo) -> (String, ZellijSession) {
+    let generation_id = session_generation_id(&session.name, session.creation_time);
+    (
+        generation_id.clone(),
+        ZellijSession {
+            generation_id,
+            name: session.name.clone(),
+            connected_client_count: session.connected_clients + session.web_client_count,
+            tab_count: session.tabs.len(),
+            pane_count: session.panes.panes.values().map(Vec::len).sum(),
+            created_at_seconds: session.creation_time.as_secs(),
+            current: session.is_current_session,
+        },
+    )
+}
+
+fn session_generation_id(_name: &str, creation_time: Duration) -> String {
+    creation_time.as_nanos().to_string()
+}
+
 fn pane_key(pane: &zellij_tile::prelude::PaneInfo) -> String {
     if pane.is_plugin {
         format!("plugin_{}", pane.id)
@@ -467,19 +508,88 @@ mod tests {
         let sessions = vec![zellij_tile::prelude::SessionInfo {
             name: "old".into(),
             is_current_session: true,
+            creation_time: std::time::Duration::from_secs(10),
             ..Default::default()
         }];
-        assert!(runtime.sync_current_session(&sessions));
+        assert!(runtime.sync_zellij_sessions(&sessions));
         assert_eq!(runtime.zellij_session.as_deref(), Some("old"));
-        assert!(!runtime.sync_current_session(&sessions));
+        assert!(!runtime.sync_zellij_sessions(&sessions));
+        let original_generation = runtime
+            .zellij_sessions
+            .values()
+            .next()
+            .unwrap()
+            .generation_id
+            .clone();
 
         let renamed = vec![zellij_tile::prelude::SessionInfo {
             name: "new".into(),
             is_current_session: true,
+            creation_time: std::time::Duration::from_secs(10),
             ..Default::default()
         }];
-        assert!(runtime.sync_current_session(&renamed));
+        assert!(runtime.sync_zellij_sessions(&renamed));
         assert_eq!(runtime.zellij_session.as_deref(), Some("new"));
+        assert_eq!(runtime.zellij_sessions.len(), 1);
+        assert!(runtime
+            .zellij_sessions
+            .values()
+            .any(|session| session.name == "new"));
+        assert_eq!(
+            runtime
+                .zellij_sessions
+                .values()
+                .next()
+                .unwrap()
+                .generation_id,
+            original_generation
+        );
+    }
+
+    #[test]
+    fn native_sessions_replace_removed_records_and_keep_generation_identity() {
+        let mut runtime = RuntimeState::default();
+        let first = zellij_tile::prelude::SessionInfo {
+            name: "work".into(),
+            is_current_session: true,
+            connected_clients: 2,
+            web_client_count: 1,
+            creation_time: std::time::Duration::from_secs(10),
+            tabs: vec![zellij_tile::prelude::TabInfo::default()],
+            panes: zellij_tile::prelude::PaneManifest {
+                panes: HashMap::from([(0, vec![zellij_tile::prelude::PaneInfo::default()])]),
+            },
+            ..Default::default()
+        };
+        let other = zellij_tile::prelude::SessionInfo {
+            name: "other".into(),
+            creation_time: std::time::Duration::from_secs(20),
+            ..Default::default()
+        };
+
+        assert!(runtime.sync_zellij_sessions(&[first.clone(), other]));
+        assert_eq!(runtime.zellij_sessions.len(), 2);
+        let original_generation = runtime
+            .zellij_sessions
+            .values()
+            .find(|session| session.name == "work")
+            .unwrap()
+            .generation_id
+            .clone();
+
+        let recreated = zellij_tile::prelude::SessionInfo {
+            creation_time: std::time::Duration::from_secs(30),
+            ..first
+        };
+        assert!(runtime.sync_zellij_sessions(&[recreated]));
+        assert_eq!(runtime.zellij_sessions.len(), 1);
+        let session = runtime.zellij_sessions.values().next().unwrap();
+        assert_eq!(session.name, "work");
+        assert_ne!(session.generation_id, original_generation);
+        assert_eq!(session.connected_client_count, 3);
+        assert_eq!(session.tab_count, 1);
+        assert_eq!(session.pane_count, 1);
+        assert_eq!(session.created_at_seconds, 30);
     }
 
     #[test]

@@ -98,6 +98,14 @@ agent title.
 Interactive entries use typed actions:
 
 ```jinja
+{% for session in sessions %}
+{% if session.current %}
+{{ session.name }}
+{% else %}
+{% call Button(on_click=actions.switch_to_session(session.name)) %}{{ session.name }}{% endcall %}
+{% endif %}
+{% endfor %}
+
 {% for tab in tabs %}
 {% if tab.agents | length > 0 %}
 {% call Button(on_click=actions.switch_tab(tab.tab_id)) %}{{ tab.tab_name }}{% endcall %}
@@ -132,10 +140,29 @@ should have equal terminal width. Every animation frame reruns the complete temp
 
 The plugin accepts only version-two Agent Reports. The payload must use `agent_id` and can include `session_name` for diagnostics. If `pane_id` is present, the plugin uses the pane as the stable row key. Reports with another `version` are rejected explicitly.
 
-Template model v2 exposes `agents`, all current-session `tabs`, and `tabs[].agents`.
-Agents without matching tab metadata stay in the flat `agents` list. The built-in template renders
-only tabs that have agents.
+Template model v2 exposes `agents`, native `sessions`, all current-session `tabs`, and
+`tabs[].agents`. Agents without matching tab metadata stay in the flat `agents` list. The
+built-in template renders only tabs that have agents.
 
-Breaking change: `session`, `current_task`, `sessions`, `groups`, and `group.sessions` are removed.
-Also removed: `template_dir`, `template_name`, `Grid`, `Stack`, `PaneButton`, `TabButton`,
+Each `sessions[]` item comes from native Zellij `SessionUpdate` data. Agent Reports do not rebuild
+the session topology.
+
+| Field | Meaning |
+|---|---|
+| `generation_id` | Stable identity for one native session generation. A removed and recreated session gets a new value, even if it reuses the same name. |
+| `name` | Native Zellij session name. |
+| `status` | `current` for the current session. Other active sessions use `active`. |
+| `agent_count` | Number of known Agents for this session. Remote sessions can be zero. |
+| `connected_client_count` | Number of connected Zellij clients. Web clients are included. |
+| `tab_count` | Number of native tabs in the session. |
+| `pane_count` | Number of native panes in the session. |
+| `created_at_seconds` | Native session creation time, in seconds. |
+| `current` | `true` when this is the current Zellij session. |
+
+`sessions` sorts the current session first. Other sessions sort by case-insensitive name.
+Use `actions.switch_to_session(session.name)` to switch to another active session. The built-in
+template does not attach this action to the current session.
+
+Breaking change: the old Agent-shaped `sessions`, `session`, `current_task`, `groups`, and
+`group.sessions` are removed. Also removed: `template_dir`, `template_name`, `Grid`, `Stack`, `PaneButton`, `TabButton`,
 `remap`, `italic`, and the old Flex `weights`/padding props.
