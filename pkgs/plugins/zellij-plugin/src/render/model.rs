@@ -277,6 +277,7 @@ mod tests {
             tabs: BTreeMap::from([(7, "Agents".into())]),
             zellij_session: None,
             zellij_sessions: BTreeMap::new(),
+            ..RuntimeState::default()
         };
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
     }

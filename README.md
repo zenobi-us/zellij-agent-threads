@@ -69,7 +69,8 @@ moon run zellij-plugin:dev-watch
 
 Default panel groups current Zellij session agents by tab. It shows running or idle state,
 pane, model, title, worktree, current tool, and recent plugin events. Click a
-tab or pane entry to switch to it. Tabs with no agents are hidden.
+tab or pane entry to switch to it. Tabs with no agents are hidden. Silent agents
+disappear after ten seconds without a heartbeat report.
 
 ## Templates
 
@@ -134,7 +135,8 @@ formatting. `format_time` formats Unix timestamps.
 
 Pi publishes version-two Agent Reports only. The payload uses `agent_id` as the stable agent key
 and `session_name` as diagnostic metadata. If a report has a `pane_id`, the plugin uses that pane
-as the stable row identity. Reports with any other `version` are rejected and recorded as pipe errors.
+as the stable row identity. Each accepted report renews a ten-second lease for that agent.
+Reports with any other `version` are rejected and recorded as pipe errors.
 
 Version one is removed. The old `session` field and `current_task` field are not accepted.
 External publishers must send `current_tool` instead.

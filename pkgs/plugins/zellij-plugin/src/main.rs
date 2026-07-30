@@ -27,32 +27,84 @@ enum ControlPipe {
 
 const TIMER_BOUNDARY_PADDING: Duration = Duration::from_millis(10);
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TimerReason {
+    render_refresh: bool,
+    agent_expiry: bool,
+}
+
+impl TimerReason {
+    const fn render_refresh() -> Self {
+        Self {
+            render_refresh: true,
+            agent_expiry: false,
+        }
+    }
+
+    const fn agent_expiry() -> Self {
+        Self {
+            render_refresh: false,
+            agent_expiry: true,
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.render_refresh |= other.render_refresh;
+        self.agent_expiry |= other.agent_expiry;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ExpiredTimer {
+    reason: TimerReason,
+    fired_at: Duration,
+}
+
 #[derive(Default)]
 struct RefreshTimer {
     active: Option<Duration>,
+    active_due_at: Duration,
+    active_reason: TimerReason,
+    active_started_at: Duration,
     superseded: Vec<Duration>,
 }
 
 impl RefreshTimer {
-    fn schedule(&mut self, requested: Option<Duration>) -> Option<Duration> {
-        let requested = requested? + TIMER_BOUNDARY_PADDING;
+    fn schedule(
+        &mut self,
+        requested: Option<(Duration, TimerReason)>,
+        now: Duration,
+    ) -> Option<Duration> {
+        let (requested, reason) = requested?;
+        let requested = requested + TIMER_BOUNDARY_PADDING;
+        let requested_due_at = now + requested;
         match self.active {
             None => {
                 self.active = Some(requested);
+                self.active_due_at = requested_due_at;
+                self.active_reason = reason;
+                self.active_started_at = now;
                 Some(requested)
             }
-            Some(active) if requested < active => {
+            Some(active) if requested_due_at < self.active_due_at => {
                 self.superseded.push(active);
                 self.active = Some(requested);
+                self.active_due_at = requested_due_at;
+                self.active_reason = reason;
+                self.active_started_at = now;
                 Some(requested)
+            }
+            Some(_) if requested_due_at == self.active_due_at => {
+                self.active_reason.merge(reason);
+                None
             }
             Some(_) => None,
         }
     }
 
-    fn expired(&mut self, elapsed_seconds: f64) -> bool {
+    fn expired(&mut self, elapsed_seconds: f64) -> Option<ExpiredTimer> {
         let Ok(elapsed) = Duration::try_from_secs_f64(elapsed_seconds) else {
-            return false;
+            return None;
         };
         let Some(active) = self.active else {
             if let Some((index, _)) = self
@@ -63,7 +115,7 @@ impl RefreshTimer {
             {
                 self.superseded.swap_remove(index);
             }
-            return false;
+            return None;
         };
         let active_distance = active.abs_diff(elapsed);
         let stale = self
@@ -78,10 +130,14 @@ impl RefreshTimer {
             stale.filter(|(_, duration)| duration.abs_diff(elapsed) < active_distance)
         {
             self.superseded.swap_remove(index);
-            false
+            None
         } else {
+            let expired = ExpiredTimer {
+                reason: self.active_reason,
+                fired_at: self.active_started_at + elapsed,
+            };
             self.active = None;
-            true
+            Some(expired)
         }
     }
 }
@@ -161,6 +217,33 @@ impl PluginState {
             }
         }
     }
+
+    fn schedule_next_timer(&mut self, render_refresh: Option<Duration>) {
+        let mut next = None;
+        for (delay, reason) in render_refresh
+            .map(|delay| (delay, TimerReason::render_refresh()))
+            .into_iter()
+            .chain(
+                self.runtime
+                    .next_agent_expiry()
+                    .map(|delay| (delay, TimerReason::agent_expiry())),
+            )
+        {
+            match &mut next {
+                None => next = Some((delay, reason)),
+                Some((current_delay, _)) if delay < *current_delay => {
+                    next = Some((delay, reason));
+                }
+                Some((current_delay, current_reason)) if delay == *current_delay => {
+                    current_reason.merge(reason);
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some(delay) = self.refresh_timer.schedule(next, self.runtime.lease_time()) {
+            schedule_timeout(delay.as_secs_f64());
+        }
+    }
 }
 
 register_plugin!(PluginState);
@@ -214,7 +297,9 @@ impl ZellijPlugin for PluginState {
 
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
         if pipe_message.name == AGENT_PIPE_NAME {
-            return self.runtime.handle_pipe(pipe_message);
+            let changed = self.runtime.handle_pipe(pipe_message);
+            self.schedule_next_timer(None);
+            return changed;
         }
 
         match control_pipe(&pipe_message.name) {
@@ -252,9 +337,7 @@ impl ZellijPlugin for PluginState {
             );
             error_frame(&error, rows, cols)
         };
-        if let Some(delay) = self.refresh_timer.schedule(self.frame.refresh_after) {
-            set_timeout(delay.as_secs_f64());
-        }
+        self.schedule_next_timer(self.frame.refresh_after);
         paint_frame(&self.frame, rows, cols);
     }
 
@@ -305,7 +388,19 @@ impl ZellijPlugin for PluginState {
                 tab_changed || focus_changed
             }
             Event::SessionUpdate(sessions, _) => self.runtime.sync_zellij_sessions(&sessions),
-            Event::Timer(elapsed) => self.refresh_timer.expired(elapsed),
+            Event::Timer(elapsed) => {
+                let Some(expired) = self.refresh_timer.expired(elapsed) else {
+                    return false;
+                };
+                self.runtime.advance_lease_clock_to(expired.fired_at);
+                let removed = if expired.reason.agent_expiry {
+                    self.runtime.expire_silent_agents() > 0
+                } else {
+                    false
+                };
+                self.schedule_next_timer(None);
+                expired.reason.render_refresh || removed
+            }
             Event::PermissionRequestResult(status) => {
                 if self.pending_template.is_some() {
                     match status {
@@ -366,6 +461,13 @@ fn parse_pane_id(value: &str) -> Option<PaneId> {
     value.parse().ok().map(PaneId::Terminal)
 }
 
+fn schedule_timeout(seconds: f64) {
+    #[cfg(target_arch = "wasm32")]
+    set_timeout(seconds);
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = seconds;
+}
+
 fn reload_self(plugin_id: u32) {
     #[cfg(target_arch = "wasm32")]
     reload_plugin_with_id(plugin_id);
@@ -409,39 +511,100 @@ mod tests {
         BTreeMap::from([("template_file".to_string(), path.to_string())])
     }
 
+    fn schedule_render(
+        timer: &mut RefreshTimer,
+        delay: Duration,
+        now: Duration,
+    ) -> Option<Duration> {
+        timer.schedule(Some((delay, TimerReason::render_refresh())), now)
+    }
+
+    fn schedule_expiry(
+        timer: &mut RefreshTimer,
+        delay: Duration,
+        now: Duration,
+    ) -> Option<Duration> {
+        timer.schedule(Some((delay, TimerReason::agent_expiry())), now)
+    }
+
     #[test]
     fn faster_refresh_supersedes_armed_timer() {
         let mut timer = RefreshTimer::default();
 
         assert_eq!(
-            timer.schedule(Some(Duration::from_secs(1))),
+            schedule_render(&mut timer, Duration::from_secs(1), Duration::ZERO),
             Some(Duration::from_millis(1_010))
         );
         assert_eq!(
-            timer.schedule(Some(Duration::from_millis(125))),
+            schedule_render(&mut timer, Duration::from_millis(125), Duration::ZERO),
             Some(Duration::from_millis(135))
         );
-        assert_eq!(timer.schedule(Some(Duration::from_millis(500))), None);
+        assert_eq!(
+            schedule_render(&mut timer, Duration::from_millis(500), Duration::ZERO),
+            None
+        );
         assert_eq!(timer.active, Some(Duration::from_millis(135)));
     }
 
     #[test]
     fn superseded_timer_does_not_start_second_render_loop() {
         let mut timer = RefreshTimer::default();
-        timer.schedule(Some(Duration::from_secs(1)));
-        timer.schedule(Some(Duration::from_millis(125)));
+        schedule_render(&mut timer, Duration::from_secs(1), Duration::ZERO);
+        schedule_render(&mut timer, Duration::from_millis(125), Duration::ZERO);
 
-        assert!(!timer.expired(1.01));
+        assert!(timer.expired(1.01).is_none());
         assert_eq!(timer.active, Some(Duration::from_millis(135)));
-        assert!(timer.expired(0.135));
+        assert_eq!(
+            timer.expired(0.135).map(|expired| expired.reason),
+            Some(TimerReason::render_refresh())
+        );
         assert_eq!(timer.active, None);
     }
 
     #[test]
     fn equal_refresh_does_not_arm_duplicate_timer() {
         let mut timer = RefreshTimer::default();
-        assert!(timer.schedule(Some(Duration::from_millis(125))).is_some());
-        assert_eq!(timer.schedule(Some(Duration::from_millis(125))), None);
+        assert!(schedule_render(&mut timer, Duration::from_millis(125), Duration::ZERO).is_some());
+        assert_eq!(
+            schedule_render(&mut timer, Duration::from_millis(125), Duration::ZERO),
+            None
+        );
+    }
+
+    #[test]
+    fn equal_timers_merge_reasons() {
+        let mut timer = RefreshTimer::default();
+        assert!(schedule_render(&mut timer, Duration::from_secs(1), Duration::ZERO).is_some());
+        assert_eq!(
+            schedule_expiry(&mut timer, Duration::from_secs(1), Duration::ZERO),
+            None
+        );
+
+        assert_eq!(
+            timer.expired(1.01).map(|expired| expired.reason),
+            Some(TimerReason {
+                render_refresh: true,
+                agent_expiry: true,
+            })
+        );
+    }
+
+    #[test]
+    fn expiry_timer_reuses_refresh_timer_identity() {
+        let mut timer = RefreshTimer::default();
+
+        assert_eq!(
+            schedule_expiry(&mut timer, Duration::from_secs(10), Duration::ZERO),
+            Some(Duration::from_millis(10_010))
+        );
+        assert_eq!(
+            schedule_expiry(&mut timer, Duration::from_secs(10), Duration::from_secs(2)),
+            None
+        );
+        assert_eq!(
+            timer.expired(10.01).map(|expired| expired.reason),
+            Some(TimerReason::agent_expiry())
+        );
     }
 
     #[test]

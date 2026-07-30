@@ -14,6 +14,7 @@ use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
 /// Name of the Zellij pipe that receives Pi Agent Reports.
 pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
+pub(crate) const AGENT_LEASE: Duration = Duration::from_secs(10);
 
 /// Mutable state for one running plugin instance.
 ///
@@ -23,6 +24,8 @@ pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
 #[derive(Default)]
 pub(crate) struct RuntimeState {
     pub(crate) agents: BTreeMap<String, AgentReport>,
+    pub(crate) agent_leases: BTreeMap<String, Duration>,
+    pub(crate) lease_clock: Duration,
     pub(crate) zellij_sessions: BTreeMap<String, ZellijSession>,
     pub(crate) tabs: BTreeMap<usize, String>,
     pub(crate) events: VecDeque<String>,
@@ -154,6 +157,8 @@ impl RuntimeState {
             return true;
         };
 
+        self.renew_agent_lease(&session);
+
         if !self.agent_update_changes_render(&session) {
             self.apply_agent_update(session);
             return false;
@@ -184,11 +189,50 @@ impl RuntimeState {
                 .as_deref()
                 .is_none_or(|session_pane_id| !pane_id_matches(session_pane_id, pane_id))
         });
+        self.agent_leases
+            .retain(|key, _| self.agents.contains_key(key));
         let removed = before - self.agents.len();
         if removed > 0 {
             self.push_event(format!("pane {} closed; removed {}", pane_id, removed));
         }
         removed
+    }
+
+    pub(crate) fn advance_lease_clock_to(&mut self, now: Duration) {
+        self.lease_clock = self.lease_clock.max(now);
+    }
+
+    pub(crate) fn lease_time(&self) -> Duration {
+        self.lease_clock
+    }
+
+    pub(crate) fn next_agent_expiry(&self) -> Option<Duration> {
+        self.agents
+            .keys()
+            .filter_map(|key| self.agent_leases.get(key))
+            .map(|seen_at| AGENT_LEASE.saturating_sub(self.lease_clock.saturating_sub(*seen_at)))
+            .min()
+    }
+
+    pub(crate) fn expire_silent_agents(&mut self) -> usize {
+        let expired = self
+            .agents
+            .keys()
+            .filter(|key| {
+                self.agent_leases
+                    .get(*key)
+                    .is_some_and(|seen_at| self.lease_clock.saturating_sub(*seen_at) >= AGENT_LEASE)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in &expired {
+            self.agents.remove(key);
+            self.agent_leases.remove(key);
+        }
+        if !expired.is_empty() {
+            self.push_event(format!("expired {} silent agent(s)", expired.len()));
+        }
+        expired.len()
     }
 
     /// Applies the latest report for a Pi agent.
@@ -200,8 +244,20 @@ impl RuntimeState {
         let key = session.cache_key();
         if session.state == AgentState::Shutdown {
             self.agents.remove(&key);
+            self.agent_leases.remove(&key);
         } else {
             self.agents.insert(key, session);
+        }
+    }
+
+    fn renew_agent_lease(&mut self, session: &AgentReport) {
+        let key = session.cache_key();
+        let reported_at = Duration::from_millis(session.updated_at);
+        self.advance_lease_clock_to(reported_at);
+        if session.state == AgentState::Shutdown {
+            self.agent_leases.remove(&key);
+        } else {
+            self.agent_leases.insert(key, self.lease_clock);
         }
     }
 
@@ -474,6 +530,74 @@ mod tests {
         unchanged.updated_at = 2;
         assert!(!runtime.handle_pipe(pipe_message(unchanged)));
         assert_eq!(runtime.pipe_count, 1);
+    }
+
+    #[test]
+    fn accepted_agent_report_renews_lease_without_render_change() {
+        let mut runtime = RuntimeState::default();
+        let mut first = session("a", Some("1"));
+        first.updated_at = 1_000;
+        assert!(runtime.handle_pipe(pipe_message(first.clone())));
+
+        let mut heartbeat = first;
+        heartbeat.updated_at = 6_000;
+        assert!(!runtime.handle_pipe(pipe_message(heartbeat)));
+        runtime.advance_lease_clock_to(Duration::from_millis(15_999));
+        assert_eq!(runtime.expire_silent_agents(), 0);
+        runtime.advance_lease_clock_to(Duration::from_millis(16_000));
+        assert_eq!(runtime.expire_silent_agents(), 1);
+    }
+
+    #[test]
+    fn agent_expires_after_ten_seconds_without_report() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.handle_pipe(pipe_message(session("a", Some("1")))));
+
+        runtime.advance_lease_clock_to(AGENT_LEASE - Duration::from_millis(1));
+        assert_eq!(runtime.expire_silent_agents(), 0);
+        assert!(runtime.agents.contains_key("1"));
+
+        runtime.advance_lease_clock_to(AGENT_LEASE);
+        assert_eq!(runtime.expire_silent_agents(), 1);
+        assert!(runtime.agents.is_empty());
+    }
+
+    #[test]
+    fn expiry_removes_only_stale_agents() {
+        let mut runtime = RuntimeState::default();
+        let mut old = session("old", Some("1"));
+        old.updated_at = 1_000;
+        let mut fresh = session("fresh", Some("2"));
+        fresh.updated_at = 9_000;
+
+        assert!(runtime.handle_pipe(pipe_message(old)));
+        assert!(runtime.handle_pipe(pipe_message(fresh)));
+        runtime.advance_lease_clock_to(Duration::from_millis(11_000));
+
+        assert_eq!(runtime.expire_silent_agents(), 1);
+        assert!(!runtime.agents.contains_key("1"));
+        assert!(runtime.agents.contains_key("2"));
+        assert_eq!(
+            runtime.next_agent_expiry(),
+            Some(Duration::from_millis(8_000))
+        );
+    }
+
+    #[test]
+    fn shutdown_and_pane_closure_remove_leases_immediately() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.handle_pipe(pipe_message(session("a", Some("1")))));
+        assert!(runtime.next_agent_expiry().is_some());
+
+        let mut shutdown = session("a", Some("1"));
+        shutdown.state = AgentState::Shutdown;
+        assert!(runtime.handle_pipe(pipe_message(shutdown)));
+        assert!(runtime.agents.is_empty());
+        assert_eq!(runtime.next_agent_expiry(), None);
+
+        assert!(runtime.handle_pipe(pipe_message(session("b", Some("2")))));
+        assert_eq!(runtime.remove_agents_for_pane(PaneId::Terminal(2)), 1);
+        assert_eq!(runtime.next_agent_expiry(), None);
     }
 
     #[test]

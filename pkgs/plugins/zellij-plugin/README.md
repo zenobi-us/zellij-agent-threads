@@ -38,7 +38,7 @@ plugins {
 
 | Name | Payload | Behaviour |
 |---|---|---|
-| `agenthreads:agent` | Agent Report v2 JSON | Update rendered agent state |
+| `agenthreads:agent` | Agent Report v2 JSON | Update rendered agent state and renew its ten-second lease |
 | `agenthreads:refresh` | None | Reload the plugin instance |
 | `agenthreads:toggle` | None | Hide or show the plugin pane |
 
@@ -138,7 +138,10 @@ should have equal terminal width. Every animation frame reruns the complete temp
 
 ## Protocol v2 and template migration
 
-The plugin accepts only version-two Agent Reports. The payload must use `agent_id` and can include `session_name` for diagnostics. If `pane_id` is present, the plugin uses the pane as the stable row key. Reports with another `version` are rejected explicitly.
+The plugin accepts only version-two Agent Reports. The payload must use `agent_id` and can include
+`session_name` for diagnostics. If `pane_id` is present, the plugin uses the pane as the stable row
+key. Each accepted report renews a ten-second lease. Silent agents disappear when that lease
+expires. Reports with another `version` are rejected explicitly.
 
 Template model v2 exposes `agents`, native `sessions`, all current-session `tabs`, and
 `tabs[].agents`. Agents without matching tab metadata stay in the flat `agents` list. The
