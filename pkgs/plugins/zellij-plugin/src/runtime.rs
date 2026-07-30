@@ -5,7 +5,7 @@
 //! It also owns the pipe payload schema used by the Pi extension.
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     time::Duration,
 };
 
@@ -14,7 +14,11 @@ use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
 /// Name of the Zellij pipe that receives Pi Agent Reports.
 pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
+pub(crate) const SUMMARY_PIPE_NAME: &str = "agenthreads:summary";
 pub(crate) const AGENT_LEASE: Duration = Duration::from_secs(10);
+pub(crate) const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(10);
+pub(crate) const SESSION_POLL_TIMEOUT: Duration = Duration::from_secs(3);
+pub(crate) const SESSION_SUMMARY_LEASE: Duration = Duration::from_secs(30);
 
 /// Mutable state for one running plugin instance.
 ///
@@ -25,8 +29,15 @@ pub(crate) const AGENT_LEASE: Duration = Duration::from_secs(10);
 pub(crate) struct RuntimeState {
     pub(crate) agents: BTreeMap<String, AgentReport>,
     pub(crate) agent_leases: BTreeMap<String, Duration>,
+    pub(crate) session_summaries: BTreeMap<String, SessionSummary>,
+    pub(crate) session_summary_leases: BTreeMap<String, Duration>,
     pub(crate) lease_clock: Duration,
     pub(crate) zellij_sessions: BTreeMap<String, ZellijSession>,
+    pub(crate) poll_queue: VecDeque<PollTarget>,
+    pub(crate) active_poll: Option<ActivePoll>,
+    pub(crate) next_poll_at: Option<Duration>,
+    pub(crate) next_poll_id: u64,
+    pub(crate) session_polling_enabled: bool,
     pub(crate) tabs: BTreeMap<usize, String>,
     pub(crate) events: VecDeque<String>,
     pub(crate) pipe_count: u64,
@@ -35,6 +46,48 @@ pub(crate) struct RuntimeState {
     pub(crate) active_tab: Option<usize>,
     pub(crate) active_tab_position: Option<usize>,
     pub(crate) zellij_session: Option<String>,
+}
+
+/// Leased Agent counts reported by another active sidebar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SessionSummary {
+    pub(crate) generation_id: String,
+    pub(crate) agent_count: usize,
+    pub(crate) running_agent_count: usize,
+    pub(crate) fresh_at_millis: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PollTarget {
+    session_name: String,
+    generation_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ActivePoll {
+    id: u64,
+    target: PollTarget,
+    started_at: Duration,
+}
+
+/// Command data for one serialized Zellij session-summary poll.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PollCommand {
+    pub(crate) id: u64,
+    pub(crate) session_name: String,
+    pub(crate) generation_id: String,
+    pub(crate) payload: String,
+}
+
+impl PollCommand {
+    pub(crate) fn context(&self) -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("operation".into(), "agenthreads:summary-poll".into()),
+            ("poll_id".into(), self.id.to_string()),
+            ("session".into(), self.session_name.clone()),
+            ("generation_id".into(), self.generation_id.clone()),
+        ])
+    }
 }
 
 /// One native Zellij session generation reported by `SessionUpdate`.
@@ -112,7 +165,233 @@ impl RuntimeState {
         }
         self.zellij_session = current;
         self.zellij_sessions = next_sessions;
+        self.drop_removed_session_work();
         true
+    }
+
+    pub(crate) fn set_session_polling_enabled(&mut self, enabled: bool) -> bool {
+        self.session_polling_enabled = enabled;
+        if enabled {
+            self.next_poll_at = Some(self.lease_clock + SESSION_POLL_INTERVAL);
+            if self.last_error.as_deref() == Some("session synchronization unavailable") {
+                self.last_error = None;
+            }
+        } else {
+            self.poll_queue.clear();
+            self.active_poll = None;
+            self.next_poll_at = None;
+            self.last_error = Some("session synchronization unavailable".into());
+        }
+        true
+    }
+
+    pub(crate) fn next_session_poll(&self) -> Option<Duration> {
+        if !self.session_polling_enabled || !self.has_remote_sessions() {
+            return None;
+        }
+        self.next_poll_at
+            .map(|due| due.saturating_sub(self.lease_clock))
+    }
+
+    pub(crate) fn begin_session_poll_cycle(&mut self) {
+        if !self.session_polling_enabled {
+            return;
+        }
+        self.next_poll_at = Some(self.lease_clock + SESSION_POLL_INTERVAL);
+        let active_generation = self
+            .active_poll
+            .as_ref()
+            .map(|poll| poll.target.generation_id.as_str());
+        let queued = self
+            .poll_queue
+            .iter()
+            .map(|target| target.generation_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let targets = self
+            .zellij_sessions
+            .values()
+            .filter(|session| !session.current)
+            .filter(|session| Some(session.generation_id.as_str()) != active_generation)
+            .filter(|session| !queued.contains(session.generation_id.as_str()))
+            .map(|session| PollTarget {
+                session_name: session.name.clone(),
+                generation_id: session.generation_id.clone(),
+            })
+            .collect::<Vec<_>>();
+        self.poll_queue.extend(targets);
+    }
+
+    pub(crate) fn next_poll_command(&mut self) -> Option<PollCommand> {
+        if !self.session_polling_enabled || self.active_poll.is_some() {
+            return None;
+        }
+        while let Some(target) = self.poll_queue.pop_front() {
+            let Some(session) = self.zellij_sessions.get(&target.generation_id) else {
+                continue;
+            };
+            if session.current || session.name != target.session_name {
+                continue;
+            }
+            self.next_poll_id += 1;
+            let active = ActivePoll {
+                id: self.next_poll_id,
+                target,
+                started_at: self.lease_clock,
+            };
+            let payload = serde_json::to_string(&SessionSummaryRequest {
+                version: 1,
+                generation_id: active.target.generation_id.clone(),
+            })
+            .expect("summary request serializes");
+            let command = PollCommand {
+                id: active.id,
+                session_name: active.target.session_name.clone(),
+                generation_id: active.target.generation_id.clone(),
+                payload,
+            };
+            self.active_poll = Some(active);
+            return Some(command);
+        }
+        None
+    }
+
+    pub(crate) fn next_poll_timeout(&self) -> Option<Duration> {
+        self.active_poll.as_ref().map(|poll| {
+            SESSION_POLL_TIMEOUT.saturating_sub(self.lease_clock.saturating_sub(poll.started_at))
+        })
+    }
+
+    pub(crate) fn poll_timed_out(&mut self) -> bool {
+        let Some(active) = &self.active_poll else {
+            return false;
+        };
+        if self.lease_clock.saturating_sub(active.started_at) < SESSION_POLL_TIMEOUT {
+            return false;
+        }
+        let session = active.target.session_name.clone();
+        self.active_poll = None;
+        self.last_error = Some(format!("session synchronization timed out for {session}"));
+        true
+    }
+
+    pub(crate) fn handle_poll_result(
+        &mut self,
+        exit_code: Option<i32>,
+        stdout: &[u8],
+        stderr: &[u8],
+        context: &BTreeMap<String, String>,
+    ) -> bool {
+        if context.get("operation").map(String::as_str) != Some("agenthreads:summary-poll") {
+            return false;
+        }
+        let Some(active) = &self.active_poll else {
+            return false;
+        };
+        if context.get("poll_id").and_then(|id| id.parse::<u64>().ok()) != Some(active.id) {
+            return false;
+        }
+        if context.get("generation_id").map(String::as_str)
+            != Some(active.target.generation_id.as_str())
+        {
+            self.active_poll = None;
+            self.last_error = Some("session synchronization correlation mismatch".into());
+            return true;
+        }
+        let generation_id = active.target.generation_id.clone();
+        let session_name = active.target.session_name.clone();
+        self.active_poll = None;
+
+        if exit_code != Some(0) {
+            let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+            self.last_error = Some(if stderr.is_empty() {
+                format!("session synchronization failed for {session_name}")
+            } else {
+                format!("session synchronization failed for {session_name}: {stderr}")
+            });
+            return true;
+        }
+
+        let Ok(output) = std::str::from_utf8(stdout) else {
+            self.last_error = Some(format!(
+                "session synchronization returned invalid utf8 for {session_name}"
+            ));
+            return true;
+        };
+        let Ok(reply) = serde_json::from_str::<SessionSummaryReply>(output.trim()) else {
+            self.last_error = Some(format!(
+                "session synchronization returned malformed output for {session_name}"
+            ));
+            return true;
+        };
+        if reply.version != 1 || reply.generation_id != generation_id {
+            self.last_error = Some(format!(
+                "session synchronization rejected stale reply for {session_name}"
+            ));
+            return true;
+        }
+
+        self.session_summaries.insert(
+            generation_id.clone(),
+            SessionSummary {
+                generation_id: reply.generation_id,
+                agent_count: reply.agent_count,
+                running_agent_count: reply.running_agent_count,
+                fresh_at_millis: reply.fresh_at_millis,
+            },
+        );
+        self.session_summary_leases
+            .insert(generation_id, self.lease_clock);
+        self.last_error = None;
+        true
+    }
+
+    pub(crate) fn session_summary_output(&self, payload: Option<&str>) -> Option<String> {
+        let request = serde_json::from_str::<SessionSummaryRequest>(payload?).ok()?;
+        if request.version != 1 {
+            return None;
+        }
+        let current = self
+            .zellij_sessions
+            .values()
+            .find(|session| session.current)?;
+        let running_agent_count = self
+            .agents
+            .values()
+            .filter(|agent| agent.state == AgentState::Running)
+            .count();
+        serde_json::to_string(&SessionSummaryReply {
+            version: 1,
+            generation_id: current.generation_id.clone(),
+            agent_count: self.agents.len(),
+            running_agent_count,
+            fresh_at_millis: self.lease_clock.as_millis() as u64,
+        })
+        .ok()
+    }
+
+    pub(crate) fn next_session_summary_expiry(&self) -> Option<Duration> {
+        self.session_summary_leases
+            .values()
+            .map(|seen_at| {
+                SESSION_SUMMARY_LEASE.saturating_sub(self.lease_clock.saturating_sub(*seen_at))
+            })
+            .min()
+    }
+
+    pub(crate) fn expire_session_summaries(&mut self) -> usize {
+        let expired = self
+            .session_summary_leases
+            .iter()
+            .filter(|(_, seen_at)| {
+                self.lease_clock.saturating_sub(**seen_at) >= SESSION_SUMMARY_LEASE
+            })
+            .map(|(generation_id, _)| generation_id.clone())
+            .collect::<Vec<_>>();
+        for generation_id in &expired {
+            self.session_summaries.remove(generation_id);
+            self.session_summary_leases.remove(generation_id);
+        }
+        expired.len()
     }
 
     /// Handles one Zellij pipe message.
@@ -281,6 +560,50 @@ impl RuntimeState {
         }
         self.events.push_back(event);
     }
+
+    fn has_remote_sessions(&self) -> bool {
+        self.zellij_sessions
+            .values()
+            .any(|session| !session.current)
+    }
+
+    fn drop_removed_session_work(&mut self) {
+        let live = self
+            .zellij_sessions
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        self.session_summaries
+            .retain(|generation_id, _| live.contains(generation_id));
+        self.session_summary_leases
+            .retain(|generation_id, _| live.contains(generation_id));
+        self.poll_queue
+            .retain(|target| live.contains(&target.generation_id));
+        if self
+            .active_poll
+            .as_ref()
+            .is_some_and(|poll| !live.contains(&poll.target.generation_id))
+        {
+            self.active_poll = None;
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionSummaryRequest {
+    version: u8,
+    generation_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionSummaryReply {
+    version: u8,
+    generation_id: String,
+    agent_count: usize,
+    running_agent_count: usize,
+    fresh_at_millis: u64,
 }
 
 /// JSON payload sent by the Pi extension over the Zellij pipe.
@@ -449,6 +772,27 @@ mod tests {
         }
     }
 
+    fn zellij_session(name: &str, current: bool, created_at_seconds: u64) -> SessionInfo {
+        SessionInfo {
+            name: name.into(),
+            is_current_session: current,
+            creation_time: Duration::from_secs(created_at_seconds),
+            ..Default::default()
+        }
+    }
+
+    fn poll_reply(generation_id: &str, agent_count: usize, running_agent_count: usize) -> Vec<u8> {
+        serde_json::json!({
+            "version": 1,
+            "generation_id": generation_id,
+            "agent_count": agent_count,
+            "running_agent_count": running_agent_count,
+            "fresh_at_millis": 42
+        })
+        .to_string()
+        .into_bytes()
+    }
+
     #[test]
     fn pipe_end_message_does_not_request_render() {
         let mut runtime = RuntimeState::default();
@@ -546,6 +890,170 @@ mod tests {
         assert_eq!(runtime.expire_silent_agents(), 0);
         runtime.advance_lease_clock_to(Duration::from_millis(16_000));
         assert_eq!(runtime.expire_silent_agents(), 1);
+    }
+
+    #[test]
+    fn session_polling_queues_remote_sessions_one_at_a_time() {
+        let mut runtime = RuntimeState::default();
+        runtime.sync_zellij_sessions(&[
+            zellij_session("local", true, 1),
+            zellij_session("alpha", false, 2),
+            zellij_session("beta", false, 3),
+        ]);
+        runtime.set_session_polling_enabled(true);
+        runtime.advance_lease_clock_to(SESSION_POLL_INTERVAL);
+
+        assert_eq!(runtime.next_session_poll(), Some(Duration::ZERO));
+        runtime.begin_session_poll_cycle();
+        runtime.begin_session_poll_cycle();
+
+        let first = runtime.next_poll_command().unwrap();
+        assert_eq!(first.session_name, "alpha");
+        assert!(runtime.next_poll_command().is_none());
+
+        assert!(runtime.handle_poll_result(
+            Some(0),
+            &poll_reply(&first.generation_id, 2, 1),
+            &[],
+            &first.context(),
+        ));
+        assert_eq!(
+            runtime.session_summaries[&first.generation_id].agent_count,
+            2
+        );
+        assert_eq!(
+            runtime.next_session_summary_expiry(),
+            Some(SESSION_SUMMARY_LEASE)
+        );
+
+        let second = runtime.next_poll_command().unwrap();
+        assert_eq!(second.session_name, "beta");
+        assert!(runtime.next_poll_command().is_none());
+    }
+
+    #[test]
+    fn poll_failures_and_timeouts_do_not_stall_queue() {
+        let mut runtime = RuntimeState::default();
+        runtime.sync_zellij_sessions(&[
+            zellij_session("local", true, 1),
+            zellij_session("alpha", false, 2),
+            zellij_session("beta", false, 3),
+        ]);
+        runtime.set_session_polling_enabled(true);
+        runtime.begin_session_poll_cycle();
+
+        let first = runtime.next_poll_command().unwrap();
+        assert!(runtime.handle_poll_result(Some(1), &[], b"no sidebar", &first.context(),));
+        assert_eq!(
+            runtime.last_error.as_deref(),
+            Some("session synchronization failed for alpha: no sidebar")
+        );
+
+        let second = runtime.next_poll_command().unwrap();
+        assert_eq!(second.session_name, "beta");
+        runtime.advance_lease_clock_to(SESSION_POLL_TIMEOUT);
+        assert!(runtime.poll_timed_out());
+        assert!(runtime.next_poll_command().is_none());
+    }
+
+    #[test]
+    fn stale_or_malformed_poll_replies_are_rejected() {
+        let mut runtime = RuntimeState::default();
+        runtime.sync_zellij_sessions(&[
+            zellij_session("local", true, 1),
+            zellij_session("alpha", false, 2),
+        ]);
+        runtime.set_session_polling_enabled(true);
+        runtime.begin_session_poll_cycle();
+
+        let command = runtime.next_poll_command().unwrap();
+        assert!(runtime.handle_poll_result(Some(0), b"not-json", &[], &command.context()));
+        assert!(runtime.session_summaries.is_empty());
+
+        runtime.begin_session_poll_cycle();
+        let command = runtime.next_poll_command().unwrap();
+        assert!(runtime.handle_poll_result(
+            Some(0),
+            &poll_reply("old-generation", 1, 1),
+            &[],
+            &command.context(),
+        ));
+        assert!(runtime.session_summaries.is_empty());
+    }
+
+    #[test]
+    fn session_removal_drops_summary_and_queued_poll_work() {
+        let mut runtime = RuntimeState::default();
+        runtime.sync_zellij_sessions(&[
+            zellij_session("local", true, 1),
+            zellij_session("alpha", false, 2),
+            zellij_session("beta", false, 3),
+        ]);
+        runtime.session_summaries.insert(
+            "2000000000".into(),
+            SessionSummary {
+                generation_id: "2000000000".into(),
+                agent_count: 1,
+                running_agent_count: 1,
+                fresh_at_millis: 0,
+            },
+        );
+        runtime
+            .session_summary_leases
+            .insert("2000000000".into(), Duration::ZERO);
+        runtime.set_session_polling_enabled(true);
+        runtime.begin_session_poll_cycle();
+        let active = runtime.next_poll_command().unwrap();
+        assert_eq!(active.generation_id, "2000000000");
+
+        runtime.sync_zellij_sessions(&[zellij_session("local", true, 1)]);
+
+        assert!(runtime.session_summaries.is_empty());
+        assert!(runtime.session_summary_leases.is_empty());
+        assert!(runtime.next_poll_command().is_none());
+        assert!(runtime.next_poll_timeout().is_none());
+    }
+
+    #[test]
+    fn permission_denial_keeps_remote_counts_unavailable() {
+        let mut runtime = RuntimeState::default();
+        runtime.sync_zellij_sessions(&[
+            zellij_session("local", true, 1),
+            zellij_session("alpha", false, 2),
+        ]);
+
+        assert!(runtime.set_session_polling_enabled(false));
+        runtime.begin_session_poll_cycle();
+
+        assert!(runtime.next_poll_command().is_none());
+        assert_eq!(
+            runtime.last_error.as_deref(),
+            Some("session synchronization unavailable")
+        );
+    }
+
+    #[test]
+    fn summary_pipe_returns_only_generation_counts_and_freshness() {
+        let mut runtime = RuntimeState::default();
+        let mut running = session("running", Some("1"));
+        running.state = AgentState::Running;
+        runtime.agents.insert("1".into(), running);
+        runtime
+            .agents
+            .insert("2".into(), session("idle", Some("2")));
+        runtime.sync_zellij_sessions(&[zellij_session("local", true, 7)]);
+        runtime.advance_lease_clock_to(Duration::from_millis(12));
+
+        let output = runtime
+            .session_summary_output(Some(r#"{"version":1,"generation_id":"7000000000"}"#))
+            .unwrap();
+        let value = serde_json::from_str::<serde_json::Value>(&output).unwrap();
+
+        assert_eq!(value["generation_id"], "7000000000");
+        assert_eq!(value["agent_count"], 2);
+        assert_eq!(value["running_agent_count"], 1);
+        assert_eq!(value["fresh_at_millis"], 12);
+        assert_eq!(value.as_object().unwrap().len(), 5);
     }
 
     #[test]

@@ -296,14 +296,14 @@ mod tests {
     fn inline_template_uses_sessions_contract() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
             "template".into(),
-            "{{ sessions[0].generation_id }} {{ sessions[0].name }} {{ sessions[0].status }} {{ sessions[0].agent_count }} {{ sessions[0].connected_client_count }} {{ sessions[0].tab_count }} {{ sessions[0].pane_count }} {{ sessions[0].created_at_seconds }}".into(),
+            "{{ sessions[0].generation_id }} {{ sessions[0].name }} {{ sessions[0].status }} {{ sessions[0].agent_count }} {{ sessions[0].running_agent_count }} {{ sessions[0].connected_client_count }} {{ sessions[0].tab_count }} {{ sessions[0].pane_count }} {{ sessions[0].created_at_seconds }}".into(),
         )]))
         .unwrap();
 
         let frame = renderer
             .render(&ModeInfo::default(), &sample_model_with_sessions(), 1, 80)
             .unwrap();
-        assert_eq!(frame.lines, ["z:10 z current 1 1 2 3 10"]);
+        assert_eq!(frame.lines, ["z:10 z current 1 1 1 2 3 10"]);
     }
 
     #[test]
@@ -346,7 +346,7 @@ mod tests {
             .join("\n");
 
         assert!(output.find("Sessions") < output.find("Agents"));
-        assert!(output.contains("z current 1a 1c 2t 3p"));
+        assert!(output.contains("z current 1a 1r 1c 2t 3p"));
         assert!(output.contains("other active 0c 0t 0p"));
         assert!(!output.contains("other active 0a"));
         assert!(frame.hitboxes.iter().flatten().any(|action| {

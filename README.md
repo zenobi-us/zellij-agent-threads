@@ -109,11 +109,23 @@ plugin location="agent-threads" {
 {% endfor %}
 ```
 
-Template model exposes `zellij_session`, `agents`, `tabs`, `events`,
+Template model exposes `zellij_session`, `agents`, `sessions`, `tabs`, `events`,
 `has_error`, and `last_error`. Each agent exposes `agent_id`, `session_name`,
 `state`, `pane`, `cwd`, `model`, `title`, `harness`, `current_tool`, and `focused`.
 `tabs` contains all current Zellij session tabs. `tab.agents` contains matching agents only.
-The old `sessions`, `groups`, `group.sessions`, and `current_task` template names are removed.
+
+Each `sessions[]` item comes from native Zellij session data. It exposes `generation_id`,
+`name`, `status`, `agent_count`, `running_agent_count`, `connected_client_count`,
+`tab_count`, `pane_count`, `created_at_seconds`, and `current`.
+
+Remote Agent counts use leased in-memory Session summaries. Each sidebar polls other active
+Zellij sessions every ten seconds with `zellij --session <name> pipe --name agenthreads:summary`.
+The poll does not specify a plugin destination, so it cannot launch a missing sidebar.
+Valid replies renew a thirty-second lease. Missing, expired, or unavailable summaries show zero
+remote Agent counts while polling continues. The plugin does not store summaries on disk and does
+not copy full remote Agent records.
+
+The old `groups`, `group.sessions`, and `current_task` template names are removed.
 
 Templates use `zellij-template-render` components and typed actions:
 

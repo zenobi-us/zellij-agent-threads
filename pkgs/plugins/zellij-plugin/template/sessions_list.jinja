@@ -4,7 +4,7 @@
   {%- endcall -%}
 
   {%- for session in sessions -%}
-    {%- set agent_suffix = " %sa" | format(session.agent_count) if session.agent_count > 0 else "" -%}
+    {%- set agent_suffix = " %sa %sr" | format(session.agent_count, session.running_agent_count) if session.agent_count > 0 else "" -%}
     {%- set session_label = " %s %s%s %sc %st %sp " | format(session.name, session.status, agent_suffix, session.connected_client_count, session.tab_count, session.pane_count) -%}
     {%- if session.current -%}
       {%- call Flex(shrink=0) -%}

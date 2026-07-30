@@ -35,6 +35,7 @@ pub(super) struct SessionLine {
     name: String,
     status: &'static str,
     agent_count: usize,
+    running_agent_count: usize,
     connected_client_count: usize,
     tab_count: usize,
     pane_count: usize,
@@ -180,6 +181,7 @@ fn session_line(session: &ZellijSession, state: &RuntimeState) -> SessionLine {
         name: session.name.clone(),
         status: if session.current { "current" } else { "active" },
         agent_count: agent_count_for_session(session, state),
+        running_agent_count: running_agent_count_for_session(session, state),
         connected_client_count: session.connected_client_count,
         tab_count: session.tab_count,
         pane_count: session.pane_count,
@@ -191,15 +193,41 @@ fn session_line(session: &ZellijSession, state: &RuntimeState) -> SessionLine {
 fn agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usize {
     if !session.current {
         return state
-            .agents
-            .values()
-            .filter(|agent| agent.zellij_session.as_deref() == Some(session.name.as_str()))
-            .count();
+            .session_summaries
+            .get(&session.generation_id)
+            .map(|summary| summary.agent_count)
+            .unwrap_or_default();
     }
 
     state
         .agents
         .values()
+        .filter(|agent| {
+            let Some(agent_session) = agent.zellij_session.as_deref() else {
+                return true;
+            };
+            agent_session == session.name
+                || !state
+                    .zellij_sessions
+                    .values()
+                    .any(|native| !native.current && native.name == agent_session)
+        })
+        .count()
+}
+
+fn running_agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usize {
+    if !session.current {
+        return state
+            .session_summaries
+            .get(&session.generation_id)
+            .map(|summary| summary.running_agent_count)
+            .unwrap_or_default();
+    }
+
+    state
+        .agents
+        .values()
+        .filter(|agent| agent.state == crate::runtime::AgentState::Running)
         .filter(|agent| {
             let Some(agent_session) = agent.zellij_session.as_deref() else {
                 return true;
@@ -255,7 +283,7 @@ fn mark_single_agent_active_tabs(tabs: &mut [TabLine]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{AgentReport, AgentState, ZellijSession};
+    use crate::runtime::{AgentReport, AgentState, SessionSummary, ZellijSession};
     use std::collections::{BTreeMap, VecDeque};
 
     pub(super) fn sample_model() -> RenderModel {
@@ -371,6 +399,15 @@ mod tests {
                     },
                 ),
             ]),
+            session_summaries: BTreeMap::from([(
+                "beta:1".into(),
+                SessionSummary {
+                    generation_id: "beta:1".into(),
+                    agent_count: 2,
+                    running_agent_count: 1,
+                    fresh_at_millis: 0,
+                },
+            )]),
             zellij_session: Some("Alpha".into()),
             ..RuntimeState::default()
         };
@@ -382,7 +419,8 @@ mod tests {
         assert_eq!(model.sessions[2].name, "beta");
         assert_eq!(model.sessions[0].agent_count, 1);
         assert_eq!(model.sessions[1].agent_count, 0);
-        assert_eq!(model.sessions[2].agent_count, 1);
+        assert_eq!(model.sessions[2].agent_count, 2);
+        assert_eq!(model.sessions[2].running_agent_count, 1);
         assert_eq!(model.sessions[0].created_at_seconds, 20);
     }
 

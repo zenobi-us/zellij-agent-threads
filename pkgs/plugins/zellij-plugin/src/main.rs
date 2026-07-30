@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -14,7 +14,7 @@ use config::PluginConfig;
 use render::{
     error_frame, paint_frame, AgentRenderer, ClickAction, RenderModel, RenderedFrame, TemplateError,
 };
-use runtime::{RuntimeState, AGENT_PIPE_NAME};
+use runtime::{PollCommand, RuntimeState, AGENT_PIPE_NAME, SUMMARY_PIPE_NAME};
 
 const REFRESH_PIPE_NAME: &str = "agenthreads:refresh";
 const TOGGLE_PIPE_NAME: &str = "agenthreads:toggle";
@@ -31,6 +31,9 @@ const TIMER_BOUNDARY_PADDING: Duration = Duration::from_millis(10);
 struct TimerReason {
     render_refresh: bool,
     agent_expiry: bool,
+    session_poll: bool,
+    poll_timeout: bool,
+    session_summary_expiry: bool,
 }
 
 impl TimerReason {
@@ -38,6 +41,9 @@ impl TimerReason {
         Self {
             render_refresh: true,
             agent_expiry: false,
+            session_poll: false,
+            poll_timeout: false,
+            session_summary_expiry: false,
         }
     }
 
@@ -45,12 +51,56 @@ impl TimerReason {
         Self {
             render_refresh: false,
             agent_expiry: true,
+            session_poll: false,
+            poll_timeout: false,
+            session_summary_expiry: false,
+        }
+    }
+
+    const fn session_poll() -> Self {
+        Self {
+            render_refresh: false,
+            agent_expiry: false,
+            session_poll: true,
+            poll_timeout: false,
+            session_summary_expiry: false,
+        }
+    }
+
+    const fn poll_timeout() -> Self {
+        Self {
+            render_refresh: false,
+            agent_expiry: false,
+            session_poll: false,
+            poll_timeout: true,
+            session_summary_expiry: false,
+        }
+    }
+
+    const fn session_summary_expiry() -> Self {
+        Self {
+            render_refresh: false,
+            agent_expiry: false,
+            session_poll: false,
+            poll_timeout: false,
+            session_summary_expiry: true,
         }
     }
 
     fn merge(&mut self, other: Self) {
         self.render_refresh |= other.render_refresh;
         self.agent_expiry |= other.agent_expiry;
+        self.session_poll |= other.session_poll;
+        self.poll_timeout |= other.poll_timeout;
+        self.session_summary_expiry |= other.session_summary_expiry;
+    }
+
+    fn any(self) -> bool {
+        self.render_refresh
+            || self.agent_expiry
+            || self.session_poll
+            || self.poll_timeout
+            || self.session_summary_expiry
     }
 }
 
@@ -127,7 +177,7 @@ impl RefreshTimer {
         // ponytail: Zellij timers have no IDs or cancellation. Match their elapsed duration;
         // replace this with opaque timer IDs if Zellij adds them.
         if let Some((index, _)) =
-            stale.filter(|(_, duration)| duration.abs_diff(elapsed) < active_distance)
+            stale.filter(|(_, duration)| duration.abs_diff(elapsed) <= active_distance)
         {
             self.superseded.swap_remove(index);
             None
@@ -139,6 +189,26 @@ impl RefreshTimer {
             self.active = None;
             Some(expired)
         }
+    }
+
+    fn cancel_poll_timeout(&mut self, now: Duration) -> Option<Duration> {
+        if !self.active_reason.poll_timeout {
+            return None;
+        }
+        self.active_reason.poll_timeout = false;
+        let remaining_reason = self.active_reason;
+        if let Some(active) = self.active.take() {
+            self.superseded.push(active);
+        }
+        if !remaining_reason.any() {
+            return None;
+        }
+        let remaining = self.active_due_at.saturating_sub(now);
+        self.active = Some(remaining);
+        self.active_due_at = now + remaining;
+        self.active_started_at = now;
+        self.active_reason = remaining_reason;
+        Some(remaining)
     }
 }
 
@@ -155,6 +225,13 @@ struct PluginState {
     pending_template: Option<PendingTemplate>,
     last_pane_manifest: Option<PaneManifest>,
     refresh_timer: RefreshTimer,
+    pending_permissions: VecDeque<PermissionRequestKind>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PermissionRequestKind {
+    Base,
+    SessionPolling,
 }
 
 struct PendingTemplate {
@@ -228,6 +305,21 @@ impl PluginState {
                     .next_agent_expiry()
                     .map(|delay| (delay, TimerReason::agent_expiry())),
             )
+            .chain(
+                self.runtime
+                    .next_session_poll()
+                    .map(|delay| (delay, TimerReason::session_poll())),
+            )
+            .chain(
+                self.runtime
+                    .next_poll_timeout()
+                    .map(|delay| (delay, TimerReason::poll_timeout())),
+            )
+            .chain(
+                self.runtime
+                    .next_session_summary_expiry()
+                    .map(|delay| (delay, TimerReason::session_summary_expiry())),
+            )
         {
             match &mut next {
                 None => next = Some((delay, reason)),
@@ -241,6 +333,22 @@ impl PluginState {
             }
         }
         if let Some(delay) = self.refresh_timer.schedule(next, self.runtime.lease_time()) {
+            schedule_timeout(delay.as_secs_f64());
+        }
+    }
+
+    fn run_next_poll_command(&mut self) {
+        if let Some(command) = self.runtime.next_poll_command() {
+            run_session_poll(&command);
+            self.schedule_next_timer(None);
+        }
+    }
+
+    fn cancel_active_poll_timeout(&mut self) {
+        if let Some(delay) = self
+            .refresh_timer
+            .cancel_poll_timeout(self.runtime.lease_time())
+        {
             schedule_timeout(delay.as_secs_f64());
         }
     }
@@ -286,11 +394,17 @@ impl ZellijPlugin for PluginState {
             EventType::TabUpdate,
             EventType::SessionUpdate,
             EventType::Timer,
+            EventType::RunCommandResult,
             EventType::PermissionRequestResult,
             EventType::HostFolderChanged,
             EventType::FailedToChangeHostFolder,
         ]);
+        self.pending_permissions
+            .push_back(PermissionRequestKind::Base);
         request_permission(&permissions);
+        self.pending_permissions
+            .push_back(PermissionRequestKind::SessionPolling);
+        request_permission(&[PermissionType::RunCommands]);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
         self.runtime.load();
     }
@@ -300,6 +414,18 @@ impl ZellijPlugin for PluginState {
             let changed = self.runtime.handle_pipe(pipe_message);
             self.schedule_next_timer(None);
             return changed;
+        }
+
+        if pipe_message.name == SUMMARY_PIPE_NAME {
+            if matches!(pipe_message.source, PipeSource::Cli(_)) {
+                if let Some(output) = self
+                    .runtime
+                    .session_summary_output(pipe_message.payload.as_deref())
+                {
+                    send_cli_pipe_output(SUMMARY_PIPE_NAME, &output);
+                }
+            }
+            return false;
         }
 
         match control_pipe(&pipe_message.name) {
@@ -387,37 +513,86 @@ impl ZellijPlugin for PluginState {
                 };
                 tab_changed || focus_changed
             }
-            Event::SessionUpdate(sessions, _) => self.runtime.sync_zellij_sessions(&sessions),
+            Event::SessionUpdate(sessions, _) => {
+                let had_active_poll = self.runtime.active_poll.is_some();
+                let changed = self.runtime.sync_zellij_sessions(&sessions);
+                if had_active_poll && self.runtime.active_poll.is_none() {
+                    self.cancel_active_poll_timeout();
+                }
+                self.run_next_poll_command();
+                changed
+            }
             Event::Timer(elapsed) => {
                 let Some(expired) = self.refresh_timer.expired(elapsed) else {
                     return false;
                 };
                 self.runtime.advance_lease_clock_to(expired.fired_at);
-                let removed = if expired.reason.agent_expiry {
+                if expired.reason.session_poll {
+                    self.runtime.begin_session_poll_cycle();
+                }
+                let removed_agents = if expired.reason.agent_expiry {
                     self.runtime.expire_silent_agents() > 0
                 } else {
                     false
                 };
+                let removed_summaries = if expired.reason.session_summary_expiry {
+                    self.runtime.expire_session_summaries() > 0
+                } else {
+                    false
+                };
+                let poll_failed = if expired.reason.poll_timeout {
+                    self.runtime.poll_timed_out()
+                } else {
+                    false
+                };
+                self.run_next_poll_command();
                 self.schedule_next_timer(None);
-                expired.reason.render_refresh || removed
+                expired.reason.render_refresh || removed_agents || removed_summaries || poll_failed
+            }
+            Event::RunCommandResult(exit_code, stdout, stderr, context) => {
+                let changed = self
+                    .runtime
+                    .handle_poll_result(exit_code, &stdout, &stderr, &context);
+                if changed {
+                    self.cancel_active_poll_timeout();
+                }
+                self.run_next_poll_command();
+                self.schedule_next_timer(None);
+                changed
             }
             Event::PermissionRequestResult(status) => {
-                if self.pending_template.is_some() {
-                    match status {
-                        PermissionStatus::Granted => change_host_folder(
-                            self.pending_template
-                                .as_ref()
-                                .expect("pending template checked above")
-                                .host_folder
-                                .clone(),
-                        ),
-                        PermissionStatus::Denied => {
-                            self.pending_template = None;
-                            self.renderer = None;
-                            self.template_error = Some(template_config_error(
-                                "template_file requires FullHdAccess permission",
-                            ));
+                match self
+                    .pending_permissions
+                    .pop_front()
+                    .unwrap_or(PermissionRequestKind::Base)
+                {
+                    PermissionRequestKind::Base => {
+                        if self.pending_template.is_some() {
+                            match status {
+                                PermissionStatus::Granted => change_host_folder(
+                                    self.pending_template
+                                        .as_ref()
+                                        .expect("pending template checked above")
+                                        .host_folder
+                                        .clone(),
+                                ),
+                                PermissionStatus::Denied => {
+                                    self.pending_template = None;
+                                    self.renderer = None;
+                                    self.template_error = Some(template_config_error(
+                                        "template_file requires FullHdAccess permission",
+                                    ));
+                                }
+                            }
                         }
+                    }
+                    PermissionRequestKind::SessionPolling => {
+                        let enabled = status == PermissionStatus::Granted;
+                        self.runtime.set_session_polling_enabled(enabled);
+                        if !enabled {
+                            self.cancel_active_poll_timeout();
+                        }
+                        self.run_next_poll_command();
                     }
                 }
                 set_selectable(false);
@@ -466,6 +641,32 @@ fn schedule_timeout(seconds: f64) {
     set_timeout(seconds);
     #[cfg(not(target_arch = "wasm32"))]
     let _ = seconds;
+}
+
+fn send_cli_pipe_output(pipe_name: &str, output: &str) {
+    #[cfg(target_arch = "wasm32")]
+    cli_pipe_output(pipe_name, output);
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = (pipe_name, output);
+}
+
+fn run_session_poll(command: &PollCommand) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let args = [
+            "zellij",
+            "--session",
+            command.session_name.as_str(),
+            "pipe",
+            "--name",
+            SUMMARY_PIPE_NAME,
+            "--",
+            command.payload.as_str(),
+        ];
+        run_command(&args, command.context());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = command;
 }
 
 fn reload_self(plugin_id: u32) {
@@ -585,7 +786,78 @@ mod tests {
             Some(TimerReason {
                 render_refresh: true,
                 agent_expiry: true,
+                ..TimerReason::default()
             })
+        );
+    }
+
+    #[test]
+    fn cancel_poll_timeout_supersedes_poll_only_timer() {
+        let mut timer = RefreshTimer::default();
+        assert_eq!(
+            timer.schedule(
+                Some((Duration::from_secs(3), TimerReason::poll_timeout())),
+                Duration::ZERO,
+            ),
+            Some(Duration::from_millis(3_010))
+        );
+
+        assert_eq!(timer.cancel_poll_timeout(Duration::ZERO), None);
+
+        assert_eq!(timer.active, None);
+        assert!(timer.expired(3.01).is_none());
+    }
+
+    #[test]
+    fn canceled_poll_timeout_does_not_fire_for_next_equal_timeout() {
+        let mut timer = RefreshTimer::default();
+        assert!(timer
+            .schedule(
+                Some((Duration::from_secs(3), TimerReason::poll_timeout())),
+                Duration::ZERO,
+            )
+            .is_some());
+        assert_eq!(timer.cancel_poll_timeout(Duration::ZERO), None);
+        assert!(timer
+            .schedule(
+                Some((Duration::from_secs(3), TimerReason::poll_timeout())),
+                Duration::from_millis(500),
+            )
+            .is_some());
+
+        assert!(timer.expired(3.01).is_none());
+        assert_eq!(
+            timer.expired(3.01).map(|expired| expired.reason),
+            Some(TimerReason::poll_timeout())
+        );
+    }
+
+    #[test]
+    fn cancel_poll_timeout_keeps_other_timer_reasons() {
+        let mut timer = RefreshTimer::default();
+        assert!(timer
+            .schedule(
+                Some((Duration::from_secs(3), TimerReason::poll_timeout())),
+                Duration::ZERO,
+            )
+            .is_some());
+        assert_eq!(
+            timer.schedule(
+                Some((Duration::from_secs(3), TimerReason::render_refresh())),
+                Duration::ZERO,
+            ),
+            None
+        );
+
+        assert_eq!(
+            timer.cancel_poll_timeout(Duration::ZERO),
+            Some(Duration::from_millis(3_010))
+        );
+
+        assert!(timer.expired(3.01).is_none());
+        assert_eq!(
+            timer.expired(3.01).map(|expired| expired.reason),
+            Some(TimerReason::render_refresh())
         );
     }
 
