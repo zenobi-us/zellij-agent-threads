@@ -77,10 +77,10 @@ pub(crate) fn error_frame(error: &Error, rows: usize, cols: usize) -> RenderedFr
 fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
     TemplateContext::new()
         .with("empty_message", model.empty_message.clone())
-        .with("sessions", Value::from_serialize(&model.sessions))
+        .with("agents", Value::from_serialize(&model.agents))
         .with("zellij_session", model.zellij_session.clone())
         .with("harness", model.harness.clone())
-        .with("groups", Value::from_serialize(&model.groups))
+        .with("tabs", Value::from_serialize(&model.tabs))
         .with("events", Value::from_serialize(&model.events))
         .with("has_error", model.has_error)
         .with("last_error", model.last_error.clone())
@@ -149,7 +149,7 @@ mod tests {
     use std::fs;
 
     use crate::config::RenderConfig;
-    use crate::runtime::{AgentSession, AgentState, RuntimeState};
+    use crate::runtime::{AgentReport, AgentState, RuntimeState};
 
     use super::*;
 
@@ -218,14 +218,15 @@ mod tests {
     }
 
     #[test]
-    fn idle_sessions_do_not_request_animation_refresh() {
+    fn idle_agents_do_not_request_animation_refresh() {
         let mut idle = agent_session("s", "1", "Idle");
         idle.state = AgentState::Idle;
         idle.current_tool = None;
         let runtime = RuntimeState {
-            sessions: BTreeMap::from([("s".into(), idle)]),
+            agents: BTreeMap::from([("s".into(), idle)]),
             focused_pane: Some("1".into()),
             active_tab: Some(7),
+            tabs: BTreeMap::from([(7, "Agents".into())]),
             zellij_session: Some("z".into()),
             ..RuntimeState::default()
         };
@@ -257,6 +258,20 @@ mod tests {
             .render(&ModeInfo::default(), &sample_model(), 1, 30)
             .unwrap();
         assert_eq!(frame.lines, [" z  1700000000"]);
+    }
+
+    #[test]
+    fn inline_template_uses_agent_and_tab_contract() {
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
+            "template".into(),
+            "{{ agents | length }}/{{ tabs | length }}/{{ tabs[0].agents | length }}".into(),
+        )]))
+        .unwrap();
+
+        let frame = renderer
+            .render(&ModeInfo::default(), &sample_model(), 1, 30)
+            .unwrap();
+        assert_eq!(frame.lines, ["1/1/1"]);
     }
 
     #[test]
@@ -382,13 +397,14 @@ mod tests {
     #[test]
     fn overflow_follows_the_focused_session() {
         let runtime = RuntimeState {
-            sessions: BTreeMap::from([
+            agents: BTreeMap::from([
                 ("a".into(), agent_session("a", "1", "First")),
                 ("b".into(), agent_session("b", "2", "Second")),
                 ("c".into(), agent_session("c", "3", "Third")),
             ]),
             focused_pane: Some("3".into()),
             active_tab: Some(7),
+            tabs: BTreeMap::from([(7, "Agents".into())]),
             zellij_session: Some("z".into()),
             ..RuntimeState::default()
         };
@@ -452,9 +468,9 @@ mod tests {
 
     fn sample_model_with_tab(tab_id: Option<usize>) -> RenderModel {
         let runtime = RuntimeState {
-            sessions: BTreeMap::from([(
+            agents: BTreeMap::from([(
                 "s".into(),
-                AgentSession {
+                AgentReport {
                     tab_id,
                     title: Some("First Message Title".into()),
                     ..agent_session("s", "1", "First Message Title")
@@ -462,17 +478,21 @@ mod tests {
             )]),
             focused_pane: Some("1".into()),
             active_tab: tab_id,
+            tabs: tab_id
+                .map(|id| BTreeMap::from([(id, "Agents".into())]))
+                .unwrap_or_default(),
             zellij_session: Some("z".into()),
             ..RuntimeState::default()
         };
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
     }
 
-    fn agent_session(session: &str, pane: &str, title: &str) -> AgentSession {
-        AgentSession {
-            version: 1,
+    fn agent_session(session: &str, pane: &str, title: &str) -> AgentReport {
+        AgentReport {
+            version: 2,
             harness: Some("pi".into()),
-            session: session.into(),
+            agent_id: session.into(),
+            session_name: Some(format!("{session}.jsonl")),
             cwd: "/tmp/project".into(),
             pane_id: Some(pane.into()),
             tab_id: Some(7),

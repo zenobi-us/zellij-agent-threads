@@ -8,9 +8,9 @@
 
 An LLM agent dashboard for Zellij.
 
-Provides a Zellij pane for llm harness sessions that phone home via [Zellij call plugin pipes](https://zellij.dev/documentation/plugin-pipes.html).
+Provides a Zellij pane for LLM agents that phone home through [Zellij plugin pipes](https://zellij.dev/documentation/plugin-pipes.html).
 
-It shows agents across tabs and panes, their state, current task, and worktree so you can find
+It shows agents across tabs and panes, their state, current tool, and worktree so you can find
 running work without tab hunting.
 
 Display format is configurable with MiniJinja templates. See [Templates](#templates) below.
@@ -67,19 +67,19 @@ moon run zellij-plugin:dev-watch
 
 ## Usage
 
-Default panel groups Pi agents by Zellij tab. It shows running or idle state,
-pane, model, title, worktree, current task, and recent plugin events. Click a
-tab or pane entry to switch to it.
+Default panel groups current Zellij session agents by tab. It shows running or idle state,
+pane, model, title, worktree, current tool, and recent plugin events. Click a
+tab or pane entry to switch to it. Tabs with no agents are hidden.
 
 ## Templates
 
 Plugin accepts an inline [MiniJinja](https://docs.rs/minijinja/latest/minijinja/)
-template in layout configuration. This small panel displays session name and
+template in layout configuration. This small panel displays the Zellij session name and
 agent count:
 
 ```kdl
 plugin location="agent-threads" {
-    template "{{ zellij_session }}: {{ sessions | length }} agents"
+    template "{{ zellij_session }}: {{ agents | length }} agents"
 }
 ```
 
@@ -98,26 +98,29 @@ plugin location="agent-threads" {
 
 ```jinja
 {{ zellij_session }}
-{% for group in groups %}
-{{ group.tab_name }} [{{ group.sessions | length }}]
-{% for session in group.sessions %}
-- {{ session.harness }}: {{ session.state }} — {{ session.cwd }}
+{% for tab in tabs %}
+{% if tab.agents | length > 0 %}
+{{ tab.tab_name }} [{{ tab.agents | length }}]
+{% for agent in tab.agents %}
+- {{ agent.harness }}: {{ agent.state }} — {{ agent.cwd }}
 {% endfor %}
+{% endif %}
 {% endfor %}
 ```
 
-Template model exposes `zellij_session`, `sessions`, `groups`, `events`,
-`has_error`, and `last_error`. Each session exposes `state`, `pane`, `cwd`,
-`model`, `title`, `harness`, `current_tool`, and `focused`. `current_task`
-remains available as a deprecated alias for existing external templates.
+Template model exposes `zellij_session`, `agents`, `tabs`, `events`,
+`has_error`, and `last_error`. Each agent exposes `agent_id`, `session_name`,
+`state`, `pane`, `cwd`, `model`, `title`, `harness`, `current_tool`, and `focused`.
+`tabs` contains all current Zellij session tabs. `tab.agents` contains matching agents only.
+The old `sessions`, `groups`, `group.sessions`, and `current_task` template names are removed.
 
 Templates use `zellij-template-render` components and typed actions:
 
 ```jinja
 {% call Flex(direction="column", grow=1) %}
-{% for session in sessions %}
-{% call Button(on_click=actions.focus_pane(session.pane), focused=session.focused) %}
-{{ " %s " | format(session.title) | fg("index:6") }}
+{% for agent in agents %}
+{% call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) %}
+{{ " %s " | format(agent.title) | fg("index:6") }}
 {% endcall %}
 {% endfor %}
 {% endcall %}
@@ -125,7 +128,16 @@ Templates use `zellij-template-render` components and typed actions:
 
 Available actions are `actions.switch_tab(index)` and `actions.focus_pane(pane)`.
 Colors use `index:N` or `rgb:R,G,B`. `format` performs normal MiniJinja string
-formatting; `format_time` formats Unix timestamps.
+formatting. `format_time` formats Unix timestamps.
+
+## Protocol v2
+
+Pi publishes version-two Agent Reports only. The payload uses `agent_id` as the stable agent key
+and `session_name` as diagnostic metadata. If a report has a `pane_id`, the plugin uses that pane
+as the stable row identity. Reports with any other `version` are rejected and recorded as pipe errors.
+
+Version one is removed. The old `session` field and `current_task` field are not accepted.
+External publishers must send `current_tool` instead.
 
 Legacy `template_dir`/`template_name` configuration and the local `Grid`,
 `Stack`, `PaneButton`, `TabButton`, `remap`, and `italic` helpers were removed.

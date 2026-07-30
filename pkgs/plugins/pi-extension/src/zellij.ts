@@ -64,7 +64,7 @@ export class ZellijPublisher {
 
 
   /**
-   * Sends the current Pi session snapshot to the Zellij plugin. Status updates
+   * Sends the current Pi Agent Report to the Zellij plugin. Status updates
    * bracket the pipe write so users can see whether transport is stuck or failed.
    */
   async publish(ctx: ExtensionContext, nextState = this.state.state, updateStatus = true): Promise<void> {
@@ -75,11 +75,13 @@ export class ZellijPublisher {
       const tab = await this.paneTabInfo();
       const paneTitle = tab?.title ?? tab?.name ?? tab?.tab_name;
       this.state.title = paneTitle;
-      const session = this.sessionKey(ctx);
+      const agentId = this.agentId(ctx);
+      const sessionName = ctx.sessionManager.getSessionFile();
       const payload = JSON.stringify({
-        version: 1,
+        version: 2,
         harness: "pi",
-        session,
+        agent_id: agentId,
+        session_name: sessionName,
         cwd: ctx.cwd,
         zellij_session: process.env.ZELLIJ_SESSION_NAME,
         pane_id: process.env.ZELLIJ_PANE_ID,
@@ -92,7 +94,7 @@ export class ZellijPublisher {
         updated_at: Date.now(),
       });
 
-      await this.log.trace(`publish session=${session} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${this.state.state} bytes=${payload.length}`);
+      await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${this.state.state} bytes=${payload.length}`);
       await this.pipeToPlugin(payload);
       this.lastError = undefined;
       if (updateStatus) this.statusWidget.update(ctx, "󰄬");
@@ -130,9 +132,9 @@ export class ZellijPublisher {
 
   /**
    * Uses the Zellij pane as the stable identity when available because resumed Pi
-   * sessions in the same pane should replace, not duplicate, the displayed row.
+   * agents in the same pane must replace, not duplicate, the displayed row.
    */
-  sessionKey(ctx: ExtensionContext): string {
+  agentId(ctx: ExtensionContext): string {
     const paneId = process.env.ZELLIJ_PANE_ID;
     if (paneId) return `${process.env.ZELLIJ_SESSION_NAME ?? "zellij"}:${paneId}`;
     return ctx.sessionManager.getSessionFile() ?? `${ctx.cwd}:${process.pid}`;

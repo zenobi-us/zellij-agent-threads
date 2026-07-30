@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, VecDeque};
 use serde::{Deserialize, Serialize};
 use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
-/// Name of the Zellij pipe that receives Pi agent session reports.
+/// Name of the Zellij pipe that receives Pi Agent Reports.
 pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
 
 /// Mutable state for one running plugin instance.
@@ -19,7 +19,8 @@ pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
 /// side effects, such as recording event history.
 #[derive(Default)]
 pub(crate) struct RuntimeState {
-    pub(crate) sessions: BTreeMap<String, AgentSession>,
+    pub(crate) agents: BTreeMap<String, AgentReport>,
+    pub(crate) tabs: BTreeMap<usize, String>,
     pub(crate) events: VecDeque<String>,
     pub(crate) pipe_count: u64,
     pub(crate) last_error: Option<String>,
@@ -51,12 +52,18 @@ impl RuntimeState {
         let active = tabs.iter().find(|tab| tab.active);
         let active_tab = active.map(|tab| tab.tab_id);
         let active_position = active.map(|tab| tab.position);
-        let mut changed =
-            self.active_tab != active_tab || self.active_tab_position != active_position;
+        let next_tabs = tabs
+            .iter()
+            .map(|tab| (tab.tab_id, tab.name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut changed = self.active_tab != active_tab
+            || self.active_tab_position != active_position
+            || self.tabs != next_tabs;
         self.active_tab = active_tab;
         self.active_tab_position = active_position;
+        self.tabs = next_tabs;
 
-        for session in self.sessions.values_mut() {
+        for session in self.agents.values_mut() {
             let Some(tab) = session
                 .tab_id
                 .and_then(|tab_id| tabs.iter().find(|tab| tab.tab_id == tab_id))
@@ -98,15 +105,36 @@ impl RuntimeState {
             return false;
         };
 
-        let Ok(session) = serde_json::from_str::<AgentSession>(&payload) else {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&payload) else {
             self.pipe_count += 1;
             self.last_error = Some("invalid json".into());
             self.push_event(format!("pipe #{} invalid json", self.pipe_count));
             return true;
         };
 
-        if !self.session_update_changes_render(&session) {
-            self.apply_session_update(session);
+        let version = value.get("version").and_then(serde_json::Value::as_u64);
+        if version != Some(2) {
+            self.pipe_count += 1;
+            let version = version
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "missing".into());
+            self.last_error = Some(format!("unsupported agent report version {version}"));
+            self.push_event(format!(
+                "pipe #{} rejected version {version}",
+                self.pipe_count
+            ));
+            return true;
+        }
+
+        let Ok(session) = serde_json::from_value::<AgentReport>(value) else {
+            self.pipe_count += 1;
+            self.last_error = Some("invalid agent report".into());
+            self.push_event(format!("pipe #{} invalid agent report", self.pipe_count));
+            return true;
+        };
+
+        if !self.agent_update_changes_render(&session) {
+            self.apply_agent_update(session);
             return false;
         }
 
@@ -118,51 +146,51 @@ impl RuntimeState {
             basename(&session.cwd)
         ));
         self.last_error = None;
-        self.apply_session_update(session);
+        self.apply_agent_update(session);
         true
     }
 
-    /// Removes sessions owned by a pane Zellij says has closed.
+    /// Removes agents owned by a pane Zellij says has closed.
     ///
     /// Pi reports terminal pane IDs as plain numbers or `terminal_<id>` depending
     /// on source, so matching is centralized here instead of spread through
     /// callers.
-    pub(crate) fn remove_sessions_for_pane(&mut self, pane_id: PaneId) -> usize {
-        let before = self.sessions.len();
-        self.sessions.retain(|_, session| {
+    pub(crate) fn remove_agents_for_pane(&mut self, pane_id: PaneId) -> usize {
+        let before = self.agents.len();
+        self.agents.retain(|_, session| {
             session
                 .pane_id
                 .as_deref()
                 .is_none_or(|session_pane_id| !pane_id_matches(session_pane_id, pane_id))
         });
-        let removed = before - self.sessions.len();
+        let removed = before - self.agents.len();
         if removed > 0 {
             self.push_event(format!("pane {} closed; removed {}", pane_id, removed));
         }
         removed
     }
 
-    /// Applies the latest report for a Pi session.
+    /// Applies the latest report for a Pi agent.
     ///
     /// `shutdown` is represented as deletion because the UI tracks active
-    /// sessions only; keeping closed sessions would make the pane noisy over long
+    /// agents only; keeping closed agents would make the pane noisy over long
     /// Zellij sessions.
-    fn apply_session_update(&mut self, session: AgentSession) {
+    fn apply_agent_update(&mut self, session: AgentReport) {
         let key = session.cache_key();
         if session.state == AgentState::Shutdown {
-            self.sessions.remove(&key);
+            self.agents.remove(&key);
         } else {
-            self.sessions.insert(key, session);
+            self.agents.insert(key, session);
         }
     }
 
-    /// Returns whether a decoded session report changes anything the plugin draws.
-    fn session_update_changes_render(&self, session: &AgentSession) -> bool {
+    /// Returns whether a decoded Agent Report changes anything the plugin draws.
+    fn agent_update_changes_render(&self, session: &AgentReport) -> bool {
         let key = session.cache_key();
         match session.state {
-            AgentState::Shutdown => self.sessions.contains_key(&key),
+            AgentState::Shutdown => self.agents.contains_key(&key),
             _ => self
-                .sessions
+                .agents
                 .get(&key)
                 .is_none_or(|current| !current.same_render_fields(session)),
         }
@@ -180,13 +208,15 @@ impl RuntimeState {
 
 /// JSON payload sent by the Pi extension over the Zellij pipe.
 ///
-/// Field names intentionally mirror the TypeScript publisher. Changes here must
-/// stay backwards-compatible or update the publisher in the same change.
+/// Field names intentionally mirror the TypeScript publisher. Version two is a
+/// breaking protocol contract; removed version-one names are not aliases.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct AgentSession {
+#[serde(deny_unknown_fields)]
+pub(crate) struct AgentReport {
     pub(crate) version: u8,
     pub(crate) harness: Option<String>,
-    pub(crate) session: String,
+    pub(crate) agent_id: String,
+    pub(crate) session_name: Option<String>,
     pub(crate) cwd: String,
     pub(crate) zellij_session: Option<String>,
     pub(crate) pane_id: Option<String>,
@@ -195,12 +225,11 @@ pub(crate) struct AgentSession {
     pub(crate) state: AgentState,
     pub(crate) model: Option<String>,
     pub(crate) title: Option<String>,
-    #[serde(alias = "current_task")]
     pub(crate) current_tool: Option<String>,
     pub(crate) updated_at: u64,
 }
 
-/// Lifecycle state for one Pi agent session.
+/// Lifecycle state for one Pi agent.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum AgentState {
@@ -209,9 +238,11 @@ pub(crate) enum AgentState {
     Shutdown,
 }
 
-impl AgentSession {
+impl AgentReport {
     fn cache_key(&self) -> String {
-        self.pane_id.clone().unwrap_or_else(|| self.session.clone())
+        self.pane_id
+            .clone()
+            .unwrap_or_else(|| self.agent_id.clone())
     }
     /// Compares only fields used by the default render model/template.
     fn same_render_fields(&self, other: &Self) -> bool {
@@ -221,6 +252,8 @@ impl AgentSession {
             && self.tab_name == other.tab_name
             && self.zellij_session == other.zellij_session
             && self.harness == other.harness
+            && self.agent_id == other.agent_id
+            && self.session_name == other.session_name
             && self.state == other.state
             && self.model == other.model
             && self.title == other.title
@@ -290,11 +323,12 @@ mod tests {
     use std::collections::HashMap;
     use zellij_tile::prelude::PipeSource;
 
-    fn session(session: &str, pane_id: Option<&str>) -> AgentSession {
-        AgentSession {
-            version: 1,
+    fn session(session: &str, pane_id: Option<&str>) -> AgentReport {
+        AgentReport {
+            version: 2,
             harness: Some("pi".into()),
-            session: session.into(),
+            agent_id: session.into(),
+            session_name: Some(format!("{session}.jsonl")),
             cwd: "/tmp".into(),
             pane_id: pane_id.map(str::to_string),
             tab_id: None,
@@ -308,7 +342,7 @@ mod tests {
         }
     }
 
-    fn pipe_message(payload: AgentSession) -> PipeMessage {
+    fn pipe_message(payload: AgentReport) -> PipeMessage {
         PipeMessage {
             source: PipeSource::Cli("test".into()),
             name: AGENT_PIPE_NAME.into(),
@@ -336,45 +370,60 @@ mod tests {
         message.name = "agent".into();
 
         assert!(!runtime.handle_pipe(message));
-        assert!(runtime.sessions.is_empty());
+        assert!(runtime.agents.is_empty());
     }
 
     #[test]
     fn current_tool_payload_updates_rendered_activity() {
         let payload = serde_json::json!({
-            "version": 1,
+            "version": 2,
             "harness": "pi",
-            "session": "a",
+            "agent_id": "a",
+            "session_name": "diagnostic-session",
             "cwd": "/tmp",
             "state": "running",
             "current_tool": "bash",
             "updated_at": 0
         });
 
-        let session: AgentSession = serde_json::from_value(payload).unwrap();
+        let session: AgentReport = serde_json::from_value(payload).unwrap();
 
         assert_eq!(session.current_tool.as_deref(), Some("bash"));
     }
 
     #[test]
-    fn legacy_current_task_payload_remains_supported() {
+    fn legacy_current_task_payload_is_rejected() {
         let payload = serde_json::json!({
-            "version": 1,
+            "version": 2,
             "harness": "pi",
-            "session": "a",
+            "agent_id": "a",
             "cwd": "/tmp",
             "state": "running",
             "current_task": "legacy activity",
             "updated_at": 0
         });
 
-        let session: AgentSession = serde_json::from_value(payload).unwrap();
+        let session = serde_json::from_value::<AgentReport>(payload);
 
-        assert_eq!(session.current_tool.as_deref(), Some("legacy activity"));
+        assert!(session.is_err());
     }
 
     #[test]
-    fn unchanged_session_pipe_does_not_request_render() {
+    fn version_one_agent_reports_are_rejected_explicitly() {
+        let mut runtime = RuntimeState::default();
+        let mut payload = session("old", Some("1"));
+        payload.version = 1;
+
+        assert!(runtime.handle_pipe(pipe_message(payload)));
+        assert!(runtime.agents.is_empty());
+        assert_eq!(
+            runtime.last_error.as_deref(),
+            Some("unsupported agent report version 1")
+        );
+    }
+
+    #[test]
+    fn unchanged_agent_pipe_does_not_request_render() {
         let mut runtime = RuntimeState::default();
         let mut first = session("a", Some("1"));
         first.updated_at = 1;
@@ -387,13 +436,13 @@ mod tests {
     }
 
     #[test]
-    fn same_pane_replaces_new_pi_session() {
+    fn same_pane_replaces_new_agent_report() {
         let mut runtime = RuntimeState::default();
         assert!(runtime.handle_pipe(pipe_message(session("old", Some("1")))));
-        assert!(!runtime.handle_pipe(pipe_message(session("new", Some("1")))));
+        assert!(runtime.handle_pipe(pipe_message(session("new", Some("1")))));
 
-        assert_eq!(runtime.sessions.len(), 1);
-        assert_eq!(runtime.sessions["1"].session, "new");
+        assert_eq!(runtime.agents.len(), 1);
+        assert_eq!(runtime.agents["1"].agent_id, "new");
     }
 
     #[test]
@@ -407,7 +456,7 @@ mod tests {
         assert!(runtime.handle_pipe(pipe_message(hidden_change)));
         assert_eq!(runtime.pipe_count, 2);
         assert_eq!(
-            runtime.sessions["1"].zellij_session.as_deref(),
+            runtime.agents["1"].zellij_session.as_deref(),
             Some("renamed")
         );
     }
@@ -443,12 +492,12 @@ mod tests {
         harness_change.harness = Some("codex".into());
         assert!(runtime.handle_pipe(pipe_message(harness_change)));
         assert_eq!(runtime.pipe_count, 2);
-        assert_eq!(runtime.sessions["1"].harness.as_deref(), Some("codex"));
+        assert_eq!(runtime.agents["1"].harness.as_deref(), Some("codex"));
     }
     #[test]
-    fn removes_only_sessions_in_closed_terminal_pane() {
+    fn removes_only_agents_in_closed_terminal_pane() {
         let mut runtime = RuntimeState {
-            sessions: BTreeMap::from([
+            agents: BTreeMap::from([
                 ("a".into(), session("a", Some("1"))),
                 ("b".into(), session("b", Some("terminal_1"))),
                 ("c".into(), session("c", Some("2"))),
@@ -457,10 +506,10 @@ mod tests {
             ..RuntimeState::default()
         };
 
-        assert_eq!(runtime.remove_sessions_for_pane(PaneId::Terminal(1)), 2);
-        assert_eq!(runtime.sessions.len(), 2);
-        assert!(runtime.sessions.contains_key("c"));
-        assert!(runtime.sessions.contains_key("d"));
+        assert_eq!(runtime.remove_agents_for_pane(PaneId::Terminal(1)), 2);
+        assert_eq!(runtime.agents.len(), 2);
+        assert!(runtime.agents.contains_key("c"));
+        assert!(runtime.agents.contains_key("d"));
     }
 
     #[test]
@@ -554,7 +603,7 @@ mod tests {
         let mut agent = session("a", Some("1"));
         agent.tab_id = Some(3);
         agent.tab_name = Some("old".into());
-        runtime.sessions.insert(agent.cache_key(), agent);
+        runtime.agents.insert(agent.cache_key(), agent);
 
         let old = vec![zellij_tile::prelude::TabInfo {
             tab_id: 3,
@@ -570,7 +619,7 @@ mod tests {
             ..old[0].clone()
         }];
         assert!(runtime.sync_tabs(&renamed));
-        assert_eq!(runtime.sessions["1"].tab_name.as_deref(), Some("renamed"));
+        assert_eq!(runtime.agents["1"].tab_name.as_deref(), Some("renamed"));
         assert!(!runtime.sync_tabs(&renamed));
     }
 }

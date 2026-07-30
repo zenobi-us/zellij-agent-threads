@@ -14,6 +14,19 @@ This repository is a Moon + proto monorepo for Zellij/Pi agent thread integratio
 - Unit tests run on host target because `.wasm` tests cannot execute directly on Linux without a WASI runner.
 - Pi extension must treat Zellij pipe failures as non-fatal.
 
-## Glossary
+## Language
 
-- Template button: rendered text that maps click hitboxes to Zellij actions such as focusing panes or switching tabs.
+**Agent**:
+An active Pi runtime represented by one Zellij terminal pane. Resuming or replacing Pi work in the same pane updates the same agent.
+_Avoid_: Session, agent session
+
+**Zellij session**:
+A named running Zellij environment containing tabs, panes, clients, and plugins.
+_Avoid_: Agent session, workspace
+
+**Session summary**:
+The compact metadata shown for one Zellij session, including native Zellij counts and aggregate agent activity.
+_Avoid_: Global agent registry, remote agent list
+
+**Template button**:
+Rendered text that maps click hitboxes to a Zellij action such as focusing a pane, switching a tab, or switching a Zellij session.

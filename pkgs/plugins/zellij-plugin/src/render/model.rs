@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::Serialize;
 
 use crate::config::RenderConfig;
@@ -13,29 +11,31 @@ use crate::runtime::{basename, state_label, RuntimeState};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct RenderModel {
     pub(super) empty_message: String,
-    pub(super) sessions: Vec<SessionLine>,
+    pub(super) agents: Vec<AgentLine>,
     pub(super) zellij_session: String,
     pub(super) harness: String,
-    pub(super) groups: Vec<TabGroup>,
+    pub(super) tabs: Vec<TabLine>,
     pub(super) events: Vec<String>,
     pub(super) has_error: bool,
     pub(super) last_error: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(super) struct TabGroup {
+pub(super) struct TabLine {
     tab_id: Option<usize>,
     tab_name: String,
-    sessions: Vec<SessionLine>,
+    agents: Vec<AgentLine>,
     active: bool,
 }
 
-/// One display row for a Pi agent session.
+/// One display row for a Pi agent.
 ///
 /// Values are already formatted for compact terminal output so the painter does
 /// not need to know about agent payload fields.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(super) struct SessionLine {
+pub(super) struct AgentLine {
+    agent_id: String,
+    session_name: String,
     state: &'static str,
     pane: String,
     cwd: String,
@@ -44,8 +44,6 @@ pub(super) struct SessionLine {
     zellij_session: String,
     harness: String,
     current_tool: String,
-    /// Deprecated template alias retained for external template compatibility.
-    current_task: String,
     focused: bool,
     active_tab: bool,
 }
@@ -53,57 +51,50 @@ pub(super) struct SessionLine {
 impl RenderModel {
     /// Builds a testable render snapshot from runtime state and render config.
     pub(crate) fn from_runtime(state: &RuntimeState, config: &RenderConfig) -> Self {
-        let sessions: Vec<_> = state
-            .sessions
+        let agents: Vec<_> = state
+            .agents
             .values()
-            .map(|session| session_line(session, state))
+            .map(|session| agent_line(session, state))
             .collect();
         let zellij_session = state
             .zellij_session
             .clone()
             .or_else(|| {
                 state
-                    .sessions
+                    .agents
                     .values()
                     .find_map(|session| session.zellij_session.clone())
             })
             .unwrap_or_else(|| "?".into());
         let harness = state
-            .sessions
+            .agents
             .values()
             .find_map(|session| session.harness.clone())
             .unwrap_or_else(|| "?".into());
 
-        let mut groups = BTreeMap::<String, TabGroup>::new();
-        for session in state.sessions.values() {
-            let tab_id = session.tab_id.map(|id| id + 1);
-            let tab_name = session
-                .tab_name
-                .clone()
-                .unwrap_or_else(|| "unknown tab".into());
-            let active = session.tab_id == state.active_tab;
-            let key = format!("{:?}\0{tab_name}", tab_id);
-            groups
-                .entry(key)
-                .or_insert_with(|| TabGroup {
-                    tab_id,
-                    tab_name,
-                    active,
-                    sessions: Vec::new(),
-                })
-                .sessions
-                .push(session_line(session, state));
-        }
+        let mut tabs: Vec<_> = state
+            .tabs
+            .iter()
+            .map(|(tab_id, tab_name)| TabLine {
+                tab_id: Some(tab_id + 1),
+                tab_name: tab_name.clone(),
+                active: Some(*tab_id) == state.active_tab,
+                agents: state
+                    .agents
+                    .values()
+                    .filter(|session| session.tab_id == Some(*tab_id))
+                    .map(|session| agent_line(session, state))
+                    .collect(),
+            })
+            .collect();
 
-        let mut groups: Vec<_> = groups.into_values().collect();
-        mark_single_session_active_tabs(&mut groups);
-
+        mark_single_agent_active_tabs(&mut tabs);
         Self {
             empty_message: config.empty_message.clone(),
-            sessions,
+            agents,
             zellij_session,
             harness,
-            groups,
+            tabs,
             events: state.events.iter().rev().cloned().collect(),
             has_error: state.last_error.is_some(),
             last_error: state.last_error.clone().unwrap_or_default(),
@@ -111,37 +102,38 @@ impl RenderModel {
     }
 
     pub(super) fn active_tab(&self) -> Option<u32> {
-        self.groups
+        self.tabs
             .iter()
-            .find(|group| group.active)
-            .and_then(|group| group.tab_id)
+            .find(|tab| tab.active)
+            .and_then(|tab| tab.tab_id)
             .and_then(|tab| u32::try_from(tab).ok())
     }
 
     pub(super) fn focused_pane(&self) -> Option<&str> {
-        self.sessions
+        self.agents
             .iter()
-            .find(|session| session.focused)
-            .map(|session| session.pane.as_str())
+            .find(|agent| agent.focused)
+            .map(|agent| agent.pane.as_str())
     }
 
     pub(super) fn layout_fill(&self, viewport_rows: usize) -> String {
-        let agent_rows = if self.sessions.is_empty() {
+        let agent_rows = if self.agents.is_empty() {
             0
         } else {
             1 + self
-                .groups
+                .tabs
                 .iter()
-                .map(|group| {
-                    1 + group
-                        .sessions
+                .filter(|tab| !tab.agents.is_empty())
+                .map(|tab| {
+                    1 + tab
+                        .agents
                         .iter()
-                        .map(|session| 3 + usize::from(session.state == "running"))
+                        .map(|agent| 3 + usize::from(agent.state == "running"))
                         .sum::<usize>()
                 })
                 .sum::<usize>()
         };
-        let event_rows = if self.sessions.is_empty() {
+        let event_rows = if self.agents.is_empty() {
             0
         } else {
             1 + self.events.len() + usize::from(self.has_error)
@@ -156,9 +148,11 @@ fn blank_rows(rows: usize) -> String {
         .join("\n")
 }
 
-fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) -> SessionLine {
+fn agent_line(session: &crate::runtime::AgentReport, state: &RuntimeState) -> AgentLine {
     let pane = session.pane_id.clone().unwrap_or_else(|| "?".into());
-    SessionLine {
+    AgentLine {
+        agent_id: session.agent_id.clone(),
+        session_name: session.session_name.clone().unwrap_or_default(),
         state: state_label(&session.state),
         focused: state.focused_pane.as_deref() == Some(pane.as_str()),
         active_tab: session.tab_id == state.active_tab,
@@ -176,14 +170,13 @@ fn session_line(session: &crate::runtime::AgentSession, state: &RuntimeState) ->
             .clone()
             .unwrap_or_else(|| basename(&session.cwd).into()),
         current_tool: session.current_tool.clone().unwrap_or_default(),
-        current_task: session.current_tool.clone().unwrap_or_default(),
     }
 }
 
-fn mark_single_session_active_tabs(groups: &mut [TabGroup]) {
-    for group in groups {
-        if group.active && group.sessions.len() == 1 && !group.sessions[0].focused {
-            group.sessions[0].focused = true;
+fn mark_single_agent_active_tabs(tabs: &mut [TabLine]) {
+    for tab in tabs {
+        if tab.active && tab.agents.len() == 1 && !tab.agents[0].focused {
+            tab.agents[0].focused = true;
         }
     }
 }
@@ -191,17 +184,18 @@ fn mark_single_session_active_tabs(groups: &mut [TabGroup]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{AgentSession, AgentState};
+    use crate::runtime::{AgentReport, AgentState};
     use std::collections::{BTreeMap, VecDeque};
 
     pub(super) fn sample_model() -> RenderModel {
         let runtime = RuntimeState {
-            sessions: BTreeMap::from([(
+            agents: BTreeMap::from([(
                 "s".into(),
-                AgentSession {
-                    version: 1,
+                AgentReport {
+                    version: 2,
                     harness: Some("pi".into()),
-                    session: "s".into(),
+                    agent_id: "s".into(),
+                    session_name: Some("diagnostic-session".into()),
                     cwd: "/tmp/project".into(),
                     pane_id: Some("1".into()),
                     tab_id: Some(7),
@@ -220,6 +214,7 @@ mod tests {
             focused_pane: Some("1".into()),
             active_tab: Some(7),
             active_tab_position: Some(0),
+            tabs: BTreeMap::from([(7, "Agents".into())]),
             zellij_session: None,
         };
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
@@ -229,31 +224,35 @@ mod tests {
     fn builds_render_model_from_runtime() {
         let model = sample_model();
 
-        assert_eq!(model.sessions.len(), 1);
-        assert_eq!(model.groups.len(), 1);
+        assert_eq!(model.agents.len(), 1);
+        assert_eq!(model.tabs.len(), 1);
         assert_eq!(model.events, vec!["new", "old"]);
-        assert!(model.groups[0].active);
-        assert!(model.sessions[0].focused);
-        assert!(model.sessions[0].active_tab);
-        assert_eq!(model.sessions[0].zellij_session, "z");
+        assert!(model.tabs[0].active);
+        assert!(model.agents[0].focused);
+        assert!(model.agents[0].active_tab);
+        assert_eq!(model.agents[0].zellij_session, "z");
         assert_eq!(model.zellij_session, "z");
 
-        assert_eq!(model.sessions[0].harness, "pi");
-        assert_eq!(model.sessions[0].current_tool, "bash");
-        assert_eq!(model.sessions[0].current_task, "bash");
+        assert_eq!(model.agents[0].harness, "pi");
+        assert_eq!(model.agents[0].agent_id, "s");
+        assert_eq!(model.agents[0].session_name, "diagnostic-session");
+        assert_eq!(model.agents[0].current_tool, "bash");
+        assert_eq!(model.tabs[0].agents.len(), 1);
         assert_eq!(model.harness, "pi");
     }
 
     #[test]
-    fn single_session_in_active_tab_is_marked_focused_when_zellij_focus_missing() {
+    fn single_agent_in_active_tab_is_marked_focused_when_zellij_focus_missing() {
         let runtime = RuntimeState {
             active_tab: Some(7),
-            sessions: BTreeMap::from([(
+            tabs: BTreeMap::from([(7, "Agents".into())]),
+            agents: BTreeMap::from([(
                 "s".into(),
-                AgentSession {
-                    version: 1,
+                AgentReport {
+                    version: 2,
                     harness: Some("pi".into()),
-                    session: "s".into(),
+                    agent_id: "s".into(),
+                    session_name: None,
                     cwd: "/tmp/project".into(),
                     pane_id: Some("1".into()),
                     tab_id: Some(7),
@@ -271,8 +270,41 @@ mod tests {
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
 
-        assert!(model.groups[0].active);
-        assert!(model.groups[0].sessions[0].focused);
+        assert!(model.tabs[0].active);
+        assert!(model.tabs[0].agents[0].focused);
+    }
+
+    #[test]
+    fn agents_without_matching_tab_metadata_remain_flat_only() {
+        let runtime = RuntimeState {
+            tabs: BTreeMap::from([(9, "Empty".into())]),
+            agents: BTreeMap::from([(
+                "s".into(),
+                AgentReport {
+                    version: 2,
+                    harness: Some("pi".into()),
+                    agent_id: "s".into(),
+                    session_name: None,
+                    cwd: "/tmp/project".into(),
+                    pane_id: Some("1".into()),
+                    tab_id: Some(7),
+                    tab_name: Some("Stale".into()),
+                    zellij_session: Some("z".into()),
+                    state: AgentState::Idle,
+                    model: None,
+                    title: None,
+                    current_tool: None,
+                    updated_at: 0,
+                },
+            )]),
+            ..RuntimeState::default()
+        };
+
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+
+        assert_eq!(model.agents.len(), 1);
+        assert_eq!(model.tabs.len(), 1);
+        assert!(model.tabs[0].agents.is_empty());
     }
 
     #[test]

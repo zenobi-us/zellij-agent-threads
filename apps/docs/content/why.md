@@ -1,12 +1,12 @@
 ---
 title: Why Zellij Agent Threads
 description: |
-  Why Zellij Agent Threads exists: a Zellij panel for tracking agent sessions across panes and tabs.
+  Why Zellij Agent Threads exists: a Zellij panel for tracking agents across panes and tabs.
 ---
 
 # Why Zellij Agent Threads
 
-Zellij Agent Threads shows agent sessions inside Zellij.
+Zellij Agent Threads shows agents inside Zellij.
 
 It gives you a sidebar or floating panel that lists agents running anywhere in the current Zellij session, across panes and tabs.
 
@@ -23,14 +23,14 @@ You need one terminal-native view that answers:
 - what belongs to this Zellij session?
 
 ```text
-agent session in any pane or tab
-  -> status report
+agent in any pane or tab
+  -> Agent Report v2
   -> Zellij panel
 ```
 
 ## The default view
 
-The default list groups agent sessions by tab:
+The default list groups agents by tab:
 
 ```text
 {TabName} [count]
@@ -58,11 +58,11 @@ infra [1]
 
 ### Current-session focus
 
-By default, the panel only shows agent sessions from the current Zellij session. The goal is not a global dashboard. It is local awareness for the workspace you are already using.
+By default, the panel only shows agents from the current Zellij session. The goal is not a global dashboard. It is local awareness for the workspace you are already using.
 
 ### Pane and tab coverage
 
-A session can start in any pane on any tab. The panel should collect those reports and group them into one readable list.
+An agent can start in any pane on any tab. The panel collects those reports and groups them into one readable list.
 
 ### Worktree clarity
 
@@ -70,7 +70,7 @@ The worktree path matters more than process trivia. When several agents are acti
 
 ### Harness-neutral reporting
 
-The first supported harness is only the first integration. Any harness should be able to publish session status if it can report agent name, status, tab, pane, and worktree path.
+The first supported harness is only the first integration. Any harness can publish agent status if it reports agent id, status, tab, pane, and worktree path.
 
 ## What this is not
 
@@ -80,13 +80,13 @@ The first supported harness is only the first integration. Any harness should be
 - not telemetry
 - not a web dashboard
 
-It is a Zellij-native status list for agent sessions.
+It is a Zellij-native status list for agents.
 
 ## Good fit
 
 Use it when you want:
 
-- a sidebar list of agent sessions
+- a sidebar list of agents
 - a floating “what is running?” panel
 - status from panes across all tabs
 - grouping by tab
@@ -103,4 +103,4 @@ Use something else when you need:
 - remote control
 - workflow automation
 
-Zellij Agent Threads should stay small: receive session reports, group them, render a useful list.
+Zellij Agent Threads stays small: receive Agent Reports, group them, render a useful list.

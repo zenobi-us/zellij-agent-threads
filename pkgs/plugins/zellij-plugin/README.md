@@ -1,6 +1,6 @@
 # zellij-plugin-agent-threads
 
-Rust/WASM Zellij plugin that lists Pi agent sessions reported through Zellij pipes.
+Rust/WASM Zellij plugin that lists Pi agents reported through Zellij pipes.
 
 ## Build
 
@@ -38,7 +38,7 @@ plugins {
 
 | Name | Payload | Behaviour |
 |---|---|---|
-| `agenthreads:agent` | Agent session JSON | Update rendered agent state |
+| `agenthreads:agent` | Agent Report v2 JSON | Update rendered agent state |
 | `agenthreads:refresh` | None | Reload the plugin instance |
 | `agenthreads:toggle` | None | Hide or show the plugin pane |
 
@@ -63,7 +63,7 @@ Inline MiniJinja templates use the shared `zellij-template-render` renderer:
 
 ```kdl
 plugin location="agent-threads" {
-    template "{{ zellij_session }}: {{ sessions | length }} agents"
+    template "{{ zellij_session }}: {{ agents | length }} agents"
 }
 ```
 
@@ -86,22 +86,28 @@ resolve relative to the entry file. The plugin polls loaded template files once 
 reloads them when their contents change.
 
 See `demo-external.kdl`. After building, verify an agent-threads template that renders
-`session.title`:
+`agent.title`:
 
 ```bash
 python3 scripts/check-external-template.py --template-file ~/.config/zellij/templates/main.jinja
 ```
 
 For another template shape, pass `--expect TEXT` and make the template render that injected
-session title.
+agent title.
 
 Interactive entries use typed actions:
 
 ```jinja
-{% call Button(on_click=actions.switch_tab(group.tab_id)) %}{{ group.tab_name }}{% endcall %}
-{% call Button(on_click=actions.focus_pane(session.pane), focused=session.focused) %}
-{{ session.title }}
+{% for tab in tabs %}
+{% if tab.agents | length > 0 %}
+{% call Button(on_click=actions.switch_tab(tab.tab_id)) %}{{ tab.tab_name }}{% endcall %}
+{% for agent in tab.agents %}
+{% call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) %}
+{{ agent.title }}
 {% endcall %}
+{% endfor %}
+{% endif %}
+{% endfor %}
 ```
 
 Layout uses nested `Flex` components. Colors passed to `fg`/`bg` use `index:N` or
@@ -114,7 +120,7 @@ pattern:
 
 ```jinja
 {% set frames = ["⠋", "⠙", "⠹", "⠸"] %}
-{% if session.state == "running" %}
+{% if agent.state == "running" %}
   {{ frames[AnimationFrame(fps=8) % (frames | length)] }}
 {% endif %}
 ```
@@ -122,5 +128,14 @@ pattern:
 Only executed calls request another render. Frequencies must be between 1 and 20 FPS, and frames
 should have equal terminal width. Every animation frame reruns the complete template and layout.
 
-Breaking change: `template_dir`, `template_name`, `Grid`, `Stack`, `PaneButton`, `TabButton`,
-`remap`, `italic`, and the old Flex `weights`/padding props are removed.
+## Protocol v2 and template migration
+
+The plugin accepts only version-two Agent Reports. The payload must use `agent_id` and can include `session_name` for diagnostics. If `pane_id` is present, the plugin uses the pane as the stable row key. Reports with another `version` are rejected explicitly.
+
+Template model v2 exposes `agents`, all current-session `tabs`, and `tabs[].agents`.
+Agents without matching tab metadata stay in the flat `agents` list. The built-in template renders
+only tabs that have agents.
+
+Breaking change: `session`, `current_task`, `sessions`, `groups`, and `group.sessions` are removed.
+Also removed: `template_dir`, `template_name`, `Grid`, `Stack`, `PaneButton`, `TabButton`,
+`remap`, `italic`, and the old Flex `weights`/padding props.

@@ -284,7 +284,7 @@ impl ZellijPlugin for PluginState {
                 None => false,
             },
             Event::PaneClosed(pane_id) => {
-                self.runtime.remove_sessions_for_pane(pane_id);
+                self.runtime.remove_agents_for_pane(pane_id);
                 true
             }
             Event::PaneUpdate(pane_manifest) => {

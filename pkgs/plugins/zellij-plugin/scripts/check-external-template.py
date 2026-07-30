@@ -27,7 +27,7 @@ parser.add_argument("--template-file", help="Template path exactly as passed thr
 parser.add_argument(
     "--expect",
     default=MARKER,
-    help="Text the template must render from the injected session title",
+    help="Text the template must render from the injected agent title",
 )
 args = parser.parse_args()
 
@@ -75,9 +75,10 @@ with tempfile.TemporaryDirectory(prefix="agent-threads-template-") as tmp_dir:
                 next_permission_attempt = now + 0.5
             if now >= next_pipe_attempt:
                 payload = json.dumps({
-                    "version": 1,
+                    "version": 2,
                     "harness": "pi",
-                    "session": "external-template-repro",
+                    "agent_id": "external-template-repro",
+                    "session_name": "external-template-repro.jsonl",
                     "cwd": str(ROOT),
                     "pane_id": "1",
                     "tab_id": 0,

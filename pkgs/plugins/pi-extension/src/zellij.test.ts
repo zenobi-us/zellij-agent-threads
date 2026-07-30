@@ -31,29 +31,46 @@ test("parsePaneTabInfo returns matching terminal pane", () => {
 
 test("publisher sends active tools using the current_tool protocol field", async () => {
   let payload = "";
-  const publisher = new ZellijPublisher(
-    { update() {} } as unknown as StatusWidget,
-    { trace: async () => {} } as unknown as LogService,
-  );
-  publisher.paneTabInfo = async () => undefined;
-  publisher.pipeToPlugin = async (value) => { payload = value; };
-  publisher.update({ currentTool: "bash" });
+  const previousPaneId = process.env.ZELLIJ_PANE_ID;
+  const previousSession = process.env.ZELLIJ_SESSION_NAME;
+  try {
+    process.env.ZELLIJ_PANE_ID = "42";
+    process.env.ZELLIJ_SESSION_NAME = "work";
+    const publisher = new ZellijPublisher(
+      { update() {} } as unknown as StatusWidget,
+      { trace: async () => {} } as unknown as LogService,
+    );
+    publisher.paneTabInfo = async () => undefined;
+    publisher.pipeToPlugin = async (value) => { payload = value; };
+    publisher.update({ currentTool: "bash" });
 
-  await publisher.publish({
-    cwd: "/tmp/project",
-    model: { id: "test-model" },
-    sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
-  } as ExtensionContext);
+    await publisher.publish({
+      cwd: "/tmp/project",
+      model: { id: "test-model" },
+      sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
+    } as ExtensionContext);
 
-  expect(JSON.parse(payload)).toMatchObject({ current_tool: "bash" });
-  expect(JSON.parse(payload)).not.toHaveProperty("current_task");
+    expect(JSON.parse(payload)).toMatchObject({
+      version: 2,
+      agent_id: "work:42",
+      session_name: "/tmp/session.jsonl",
+      current_tool: "bash",
+    });
+    expect(JSON.parse(payload)).not.toHaveProperty("session");
+    expect(JSON.parse(payload)).not.toHaveProperty("current_task");
 
-  publisher.update({ currentTool: undefined });
-  await publisher.publish({
-    cwd: "/tmp/project",
-    model: { id: "test-model" },
-    sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
-  } as ExtensionContext);
+    publisher.update({ currentTool: undefined });
+    await publisher.publish({
+      cwd: "/tmp/project",
+      model: { id: "test-model" },
+      sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
+    } as ExtensionContext);
 
-  expect(JSON.parse(payload)).not.toHaveProperty("current_tool");
+    expect(JSON.parse(payload)).not.toHaveProperty("current_tool");
+  } finally {
+    if (previousPaneId === undefined) delete process.env.ZELLIJ_PANE_ID;
+    else process.env.ZELLIJ_PANE_ID = previousPaneId;
+    if (previousSession === undefined) delete process.env.ZELLIJ_SESSION_NAME;
+    else process.env.ZELLIJ_SESSION_NAME = previousSession;
+  }
 });

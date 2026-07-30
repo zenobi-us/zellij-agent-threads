@@ -2,7 +2,7 @@
 name = "zellij-plugin-agent-threads"
 version = "0.1.0"
 edition = "2021"
-description = "Zellij plugin that lists Pi agent sessions"
+description = "Zellij plugin that lists Pi agents"
 license = "MIT"
 
 [dependencies]
