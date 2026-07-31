@@ -231,7 +231,6 @@ struct PluginState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PermissionRequestKind {
     Base,
-    SessionPolling,
 }
 
 struct PendingTemplate {
@@ -352,6 +351,29 @@ impl PluginState {
             schedule_timeout(delay.as_secs_f64());
         }
     }
+
+    fn template_unavailable_error(&self) -> TemplateError {
+        if let Some(pending_template) = &self.pending_template {
+            if self
+                .pending_permissions
+                .iter()
+                .any(|request| *request == PermissionRequestKind::Base)
+            {
+                return template_config_error(format!(
+                    "template_file is waiting for FullHdAccess permission to mount {}",
+                    pending_template.host_folder.display()
+                ));
+            }
+            return template_config_error(format!(
+                "template_file permission granted; waiting for Zellij to mount {} as /host",
+                pending_template.host_folder.display()
+            ));
+        }
+
+        template_config_error(
+            "template renderer unavailable; no renderer, error, or pending template",
+        )
+    }
 }
 
 register_plugin!(PluginState);
@@ -361,15 +383,18 @@ impl ZellijPlugin for PluginState {
         self.config = PluginConfig::parse(&configuration);
         self.renderer_configuration = configuration.clone();
         set_selectable(true);
-        let mut permissions = vec![
+        // Zellij rewrites the permission cache with the exact requested set, even for cached grants.
+        // Keep this list stable so a launch without template_file does not drop FullHdAccess.
+        let permissions = vec![
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
+            PermissionType::RunCommands,
+            PermissionType::FullHdAccess,
         ];
         let has_template_file = configuration.contains_key("template_file");
         let has_conflicting_template = has_template_file && configuration.contains_key("template");
         if has_template_file && !has_conflicting_template {
-            permissions.push(PermissionType::FullHdAccess);
             match prepare_external_template(
                 configuration,
                 std::env::var_os("HOME").as_deref().map(Path::new),
@@ -402,9 +427,6 @@ impl ZellijPlugin for PluginState {
         self.pending_permissions
             .push_back(PermissionRequestKind::Base);
         request_permission(&permissions);
-        self.pending_permissions
-            .push_back(PermissionRequestKind::SessionPolling);
-        request_permission(&[PermissionType::RunCommands]);
         self.plugin_id = Some(get_plugin_ids().plugin_id);
         self.runtime.load();
     }
@@ -457,11 +479,7 @@ impl ZellijPlugin for PluginState {
         } else if let Some(error) = &self.template_error {
             error_frame(error, rows, cols)
         } else {
-            let error = TemplateError::new(
-                zellij_template_render::ErrorKind::InvalidOperation,
-                "template renderer unavailable",
-            );
-            error_frame(&error, rows, cols)
+            error_frame(&self.template_unavailable_error(), rows, cols)
         };
         self.schedule_next_timer(self.frame.refresh_after);
         paint_frame(&self.frame, rows, cols);
@@ -514,13 +532,12 @@ impl ZellijPlugin for PluginState {
                 tab_changed || focus_changed
             }
             Event::SessionUpdate(sessions, _) => {
-                let had_active_poll = self.runtime.active_poll.is_some();
-                let changed = self.runtime.sync_zellij_sessions(&sessions);
-                if had_active_poll && self.runtime.active_poll.is_none() {
+                let outcome = self.runtime.sync_zellij_sessions_with_outcome(&sessions);
+                if outcome.canceled_active_poll {
                     self.cancel_active_poll_timeout();
                 }
                 self.run_next_poll_command();
-                changed
+                outcome.changed
             }
             Event::Timer(elapsed) => {
                 let Some(expired) = self.refresh_timer.expired(elapsed) else {
@@ -561,11 +578,8 @@ impl ZellijPlugin for PluginState {
                 changed
             }
             Event::PermissionRequestResult(status) => {
-                match self
-                    .pending_permissions
-                    .pop_front()
-                    .unwrap_or(PermissionRequestKind::Base)
-                {
+                let request = finish_pending_permission(&mut self.pending_permissions);
+                match request {
                     PermissionRequestKind::Base => {
                         if self.pending_template.is_some() {
                             match status {
@@ -585,8 +599,6 @@ impl ZellijPlugin for PluginState {
                                 }
                             }
                         }
-                    }
-                    PermissionRequestKind::SessionPolling => {
                         let enabled = status == PermissionStatus::Granted;
                         self.runtime.set_session_polling_enabled(enabled);
                         if !enabled {
@@ -595,7 +607,9 @@ impl ZellijPlugin for PluginState {
                         self.run_next_poll_command();
                     }
                 }
-                set_selectable(false);
+                if self.pending_permissions.is_empty() {
+                    set_selectable(false);
+                }
                 true
             }
             Event::HostFolderChanged(_) => {
@@ -634,6 +648,14 @@ fn parse_pane_id(value: &str) -> Option<PaneId> {
         return id.parse().ok().map(PaneId::Plugin);
     }
     value.parse().ok().map(PaneId::Terminal)
+}
+
+fn finish_pending_permission(
+    pending_permissions: &mut VecDeque<PermissionRequestKind>,
+) -> PermissionRequestKind {
+    pending_permissions
+        .pop_front()
+        .unwrap_or(PermissionRequestKind::Base)
 }
 
 fn schedule_timeout(seconds: f64) {
@@ -908,6 +930,50 @@ mod tests {
 
         assert_eq!(plugin_is_suppressed(&manifest, 42), Some(true));
         assert_eq!(plugin_is_suppressed(&manifest, 7), None);
+    }
+
+    #[test]
+    fn permission_queue_reports_base_request() {
+        let mut pending_permissions = VecDeque::from([PermissionRequestKind::Base]);
+
+        assert_eq!(
+            finish_pending_permission(&mut pending_permissions),
+            PermissionRequestKind::Base
+        );
+        assert!(pending_permissions.is_empty());
+    }
+
+    #[test]
+    fn pending_external_template_reports_waiting_step() {
+        let pending_template = PendingTemplate {
+            host_folder: PathBuf::from("/var/home/q/.config/zellij/plugins/agent-threads"),
+            configuration: template_config("/main.jinja"),
+        };
+        let state = PluginState {
+            pending_template: Some(pending_template),
+            pending_permissions: VecDeque::from([PermissionRequestKind::Base]),
+            ..PluginState::default()
+        };
+
+        assert!(state
+            .template_unavailable_error()
+            .to_string()
+            .contains("waiting for FullHdAccess permission"));
+
+        let pending_template = PendingTemplate {
+            host_folder: PathBuf::from("/var/home/q/.config/zellij/plugins/agent-threads"),
+            configuration: template_config("/main.jinja"),
+        };
+        let state = PluginState {
+            pending_template: Some(pending_template),
+            pending_permissions: VecDeque::new(),
+            ..PluginState::default()
+        };
+
+        assert!(state
+            .template_unavailable_error()
+            .to_string()
+            .contains("waiting for Zellij to mount"));
     }
 
     #[test]

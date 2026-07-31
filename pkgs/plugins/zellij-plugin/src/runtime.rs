@@ -70,6 +70,12 @@ pub(crate) struct ActivePoll {
     started_at: Duration,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SessionSyncOutcome {
+    pub(crate) changed: bool,
+    pub(crate) canceled_active_poll: bool,
+}
+
 /// Command data for one serialized Zellij session-summary poll.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PollCommand {
@@ -167,6 +173,18 @@ impl RuntimeState {
         self.zellij_sessions = next_sessions;
         self.drop_removed_session_work();
         true
+    }
+
+    pub(crate) fn sync_zellij_sessions_with_outcome(
+        &mut self,
+        sessions: &[SessionInfo],
+    ) -> SessionSyncOutcome {
+        let had_active_poll = self.active_poll.is_some();
+        let changed = self.sync_zellij_sessions(sessions);
+        SessionSyncOutcome {
+            changed,
+            canceled_active_poll: had_active_poll && self.active_poll.is_none(),
+        }
     }
 
     pub(crate) fn set_session_polling_enabled(&mut self, enabled: bool) -> bool {
@@ -703,8 +721,8 @@ fn native_session(session: &SessionInfo) -> (String, ZellijSession) {
     )
 }
 
-fn session_generation_id(_name: &str, creation_time: Duration) -> String {
-    creation_time.as_nanos().to_string()
+fn session_generation_id(name: &str, creation_time: Duration) -> String {
+    format!("{}:{}", name, creation_time.as_nanos())
 }
 
 fn pane_key(pane: &zellij_tile::prelude::PaneInfo) -> String {
@@ -990,9 +1008,9 @@ mod tests {
             zellij_session("beta", false, 3),
         ]);
         runtime.session_summaries.insert(
-            "2000000000".into(),
+            "alpha:2000000000".into(),
             SessionSummary {
-                generation_id: "2000000000".into(),
+                generation_id: "alpha:2000000000".into(),
                 agent_count: 1,
                 running_agent_count: 1,
                 fresh_at_millis: 0,
@@ -1000,11 +1018,11 @@ mod tests {
         );
         runtime
             .session_summary_leases
-            .insert("2000000000".into(), Duration::ZERO);
+            .insert("alpha:2000000000".into(), Duration::ZERO);
         runtime.set_session_polling_enabled(true);
         runtime.begin_session_poll_cycle();
         let active = runtime.next_poll_command().unwrap();
-        assert_eq!(active.generation_id, "2000000000");
+        assert_eq!(active.generation_id, "alpha:2000000000");
 
         runtime.sync_zellij_sessions(&[zellij_session("local", true, 1)]);
 
@@ -1045,11 +1063,11 @@ mod tests {
         runtime.advance_lease_clock_to(Duration::from_millis(12));
 
         let output = runtime
-            .session_summary_output(Some(r#"{"version":1,"generation_id":"7000000000"}"#))
+            .session_summary_output(Some(r#"{"version":1,"generation_id":"local:7000000000"}"#))
             .unwrap();
         let value = serde_json::from_str::<serde_json::Value>(&output).unwrap();
 
-        assert_eq!(value["generation_id"], "7000000000");
+        assert_eq!(value["generation_id"], "local:7000000000");
         assert_eq!(value["agent_count"], 2);
         assert_eq!(value["running_agent_count"], 1);
         assert_eq!(value["fresh_at_millis"], 12);
@@ -1167,7 +1185,7 @@ mod tests {
             .zellij_sessions
             .values()
             .any(|session| session.name == "new"));
-        assert_eq!(
+        assert_ne!(
             runtime
                 .zellij_sessions
                 .values()
@@ -1222,6 +1240,20 @@ mod tests {
         assert_eq!(session.tab_count, 1);
         assert_eq!(session.pane_count, 1);
         assert_eq!(session.created_at_seconds, 30);
+    }
+
+    #[test]
+    fn native_session_generation_includes_name_and_creation_time() {
+        let mut runtime = RuntimeState::default();
+
+        assert!(runtime.sync_zellij_sessions(&[
+            zellij_session("alpha", true, 10),
+            zellij_session("beta", false, 10),
+        ]));
+
+        assert_eq!(runtime.zellij_sessions.len(), 2);
+        assert!(runtime.zellij_sessions.contains_key("alpha:10000000000"));
+        assert!(runtime.zellij_sessions.contains_key("beta:10000000000"));
     }
 
     #[test]
