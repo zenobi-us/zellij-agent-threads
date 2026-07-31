@@ -1,10 +1,10 @@
+{%- from "tree-link.jinja" import tree_link_line -%}
 {%- if agents | length > 0 -%}
   {%- call Flex(shrink=0) -%}
   {{- " Agents " | bold | bg("index:6") | fg("index:0") -}}
   {%- endcall -%}
   {%- set spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] -%}
   {%- macro spinner(fps=8) -%}{{ spinner_frames[AnimationFrame(fps=fps) % (spinner_frames | length)] }}{%- endmacro -%}
-  {%- macro indicator(focused) -%}{{ " " | bg("index:4") | fg("index:0") if focused else " " }}{%- endmacro -%}
   {%- macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro -%}
 
   {%- for tab in tabs -%}
@@ -22,15 +22,13 @@
     {%- endif -%}
 
     {%- for agent in tab.agents -%}
-      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}
       {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
       {%- set agent_label = "%s %s %s@%s" | format(agent.pane, icon, agent.harness, agent.model) -%}
-      {{ indicator(agent.focused) }} {{ t(agent_label | bold, agent.focused) }}
-      {{ indicator(agent.focused) }}     󰆈 {{ agent.title | bold if agent.focused else agent.title | dim }}
-      {{ indicator(agent.focused) }}      {{ agent.cwd | bold if agent.focused else agent.cwd | dim }}
-      {%- if agent.state == "running" and agent.current_tool %}
-        {{ indicator(agent.focused) }}  {{ agent.current_tool | bold if agent.focused else agent.current_tool | dim }}
-      {%- endif -%}
+      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}
+        {{ " " }} {{ tree_link(loop.index0, tab.agents | length) | dim }} {{ icon }} {{ t(agent_label, agent.focused) }}
+        {%- if agent.state == "running" and agent.current_tool %}
+          {{ indicator(agent.focused) }}  {{ agent.current_tool | bold if agent.focused else agent.current_tool | dim }}
+        {%- endif -%}
       {%- endcall -%}
     {%- endfor -%}
 
