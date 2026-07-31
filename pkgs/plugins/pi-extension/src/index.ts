@@ -49,6 +49,7 @@ export default function (pi: ExtensionAPI) {
     void log.debug(`session_start cwd=${ctx.cwd}`);
     statusWidget = new StatusWidget(STATUS_KEY, config.statusBarTemplate);
     publisher.updateStatusWidget(statusWidget);
+    publisher.updatePluginAlias(config.pluginAlias);
     publisher.scheduleRefresh(ctx);
     void publisher.publish(ctx, "idle");
   });
@@ -68,11 +69,13 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_start", (_event, ctx) => { void publisher.publish(ctx, "running"); });
 
   /**
-   * Marks the session idle as soon as the agent stops. Conversation title/task
-   * naming belongs to a separate extension, not this Zellij bridge.
+   * Delays idle publish so retries, compaction, and follow-ups can start first.
+   * Conversation title/task naming belongs to a separate extension.
    */
   pi.on("agent_end", (_event, ctx) => {
-    void publisher.publish(ctx, "idle");
+    setTimeout(() => {
+      if (ctx.isIdle()) void publisher.publish(ctx, "idle");
+    }, 100);
   });
 
   /**

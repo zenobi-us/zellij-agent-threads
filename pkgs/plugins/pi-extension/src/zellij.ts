@@ -4,10 +4,12 @@ import type { StatusWidget, StatusValues } from "./status.js";
 import type { LogService } from "./log.js";
 
 export const PIPE_NAME = "agenthreads:agent";
+export const DEFAULT_PLUGIN_ALIAS = "agent-threads";
 export const REFRESH_MS = 2_000;
+export const COMMAND_TIMEOUT_MS = 3_000;
 
-export function pipeArgs(payload: string): string[] {
-  return ["pipe", "--name", PIPE_NAME, "--", payload];
+export function pipeArgs(payload: string, pluginAlias = DEFAULT_PLUGIN_ALIAS): string[] {
+  return ["pipe", "--plugin", pluginAlias, "--name", PIPE_NAME, "--", payload];
 }
 
 export type AgentState = "idle" | "running" | "shutdown";
@@ -38,10 +40,12 @@ export class ZellijPublisher {
   lastError: string | undefined;
   publishCount = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private publishTail: Promise<void> = Promise.resolve();
 
   constructor(
     private statusWidget: StatusWidget,
     private log: LogService,
+    private pluginAlias = DEFAULT_PLUGIN_ALIAS,
     private state: PublisherState = { state: "idle" },
   ) {}
 
@@ -51,6 +55,10 @@ export class ZellijPublisher {
    */
   updateStatusWidget(statusWidget: StatusWidget): void {
     this.statusWidget = statusWidget;
+  }
+
+  updatePluginAlias(pluginAlias: string): void {
+    this.pluginAlias = pluginAlias;
   }
 
 
@@ -68,13 +76,22 @@ export class ZellijPublisher {
    * bracket the pipe write so users can see whether transport is stuck or failed.
    */
   async publish(ctx: ExtensionContext, nextState = this.state.state, updateStatus = true): Promise<void> {
+    this.state.state = nextState;
+    const state = { ...this.state };
+    this.publishTail = this.publishTail.then(
+      () => this.publishNow(ctx, state, updateStatus),
+      () => this.publishNow(ctx, state, updateStatus),
+    );
+    return this.publishTail;
+  }
+
+  private async publishNow(ctx: ExtensionContext, state: PublisherState, updateStatus: boolean): Promise<void> {
     try {
-      this.state.state = nextState;
       this.publishCount += 1;
       if (updateStatus) this.statusWidget.update(ctx, "");
       const tab = await this.paneTabInfo();
       const paneTitle = tab?.title ?? tab?.name ?? tab?.tab_name;
-      this.state.title = paneTitle;
+      state.title = paneTitle;
       const agentId = this.agentId(ctx);
       const sessionName = ctx.sessionManager.getSessionFile();
       const payload = JSON.stringify({
@@ -87,22 +104,22 @@ export class ZellijPublisher {
         pane_id: process.env.ZELLIJ_PANE_ID,
         tab_id: tab?.tab_id,
         tab_name: tab?.tab_name,
-        state: this.state.state,
+        state: state.state,
         model: ctx.model?.id,
         title: paneTitle,
-        current_tool: this.state.currentTool,
+        current_tool: state.currentTool,
         updated_at: Date.now(),
       });
 
-      await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${this.state.state} bytes=${payload.length}`);
+      await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${state.state} plugin=${this.pluginAlias} bytes=${payload.length}`);
       await this.pipeToPlugin(payload);
       this.lastError = undefined;
       if (updateStatus) this.statusWidget.update(ctx, "󰄬");
-      await this.log.trace(`pipe ok state=${this.state.state}`);
+      await this.log.trace(`pipe ok state=${state.state}`);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       if (updateStatus) this.statusWidget.update(ctx, "");
-      await this.log.trace(`pipe error state=${this.state.state} error=${this.lastError}`);
+      await this.log.trace(`pipe error state=${state.state} error=${this.lastError}`);
     }
   }
 
@@ -150,12 +167,23 @@ export class ZellijPublisher {
         stdio: ["ignore", "pipe", "ignore"],
       });
       let stdout = "";
+      let settled = false;
+      const done = (value: PaneTabInfo | undefined) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        done(undefined);
+      }, COMMAND_TIMEOUT_MS);
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk) => { stdout += chunk; });
-      child.on("error", () => resolve(undefined));
+      child.on("error", () => done(undefined));
       child.on("exit", (code) => {
-        if (code !== 0) return resolve(undefined);
-        resolve(parsePaneTabInfo(stdout, paneId));
+        if (code !== 0) return done(undefined);
+        done(parsePaneTabInfo(stdout, paneId));
       });
     });
   }
@@ -166,14 +194,26 @@ export class ZellijPublisher {
    */
   pipeToPlugin(payload: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("zellij", pipeArgs(payload), {
+      const child = spawn("zellij", pipeArgs(payload, this.pluginAlias), {
         stdio: "ignore",
       });
+      let settled = false;
+      const done = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        done(new Error(`zellij pipe timed out after ${COMMAND_TIMEOUT_MS}ms`));
+      }, COMMAND_TIMEOUT_MS);
 
-      child.on("error", reject);
+      child.on("error", done);
       child.on("exit", (code, signal) => {
-        if (code === 0) resolve();
-        else reject(new Error(`zellij pipe failed code=${code} signal=${signal}`));
+        if (code === 0) done();
+        else done(new Error(`zellij pipe failed code=${code} signal=${signal}`));
       });
     });
   }

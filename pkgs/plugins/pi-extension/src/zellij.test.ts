@@ -4,9 +4,21 @@ import type { LogService } from "./log.js";
 import type { StatusWidget } from "./status.js";
 import { parsePaneTabInfo, pipeArgs, ZellijPublisher } from "./zellij.js";
 
-test("publisher broadcasts to running pipe listeners", () => {
+test("publisher targets configured plugin alias", () => {
   expect(pipeArgs("payload")).toEqual([
     "pipe",
+    "--plugin",
+    "agent-threads",
+    "--name",
+    "agenthreads:agent",
+    "--",
+    "payload",
+  ]);
+
+  expect(pipeArgs("payload", "custom-agent-threads")).toEqual([
+    "pipe",
+    "--plugin",
+    "custom-agent-threads",
     "--name",
     "agenthreads:agent",
     "--",
@@ -27,6 +39,37 @@ test("parsePaneTabInfo returns matching terminal pane", () => {
     { id: 1, is_plugin: true },
     { id: 1, is_plugin: false, tab_name: "tab", title: "pi" },
   ]), "1")).toEqual({ id: 1, is_plugin: false, tab_name: "tab", title: "pi" });
+});
+
+test("publisher serializes publish snapshots", async () => {
+  const payloads: string[] = [];
+  const gates: Array<() => void> = [];
+  const publisher = new ZellijPublisher(
+    { update() {} } as unknown as StatusWidget,
+    { trace: async () => {} } as unknown as LogService,
+  );
+  publisher.paneTabInfo = async () => new Promise((resolve) => {
+    gates.push(() => resolve(undefined));
+  });
+  publisher.pipeToPlugin = async (value) => { payloads.push(value); };
+  const ctx = {
+    cwd: "/tmp/project",
+    sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
+  } as ExtensionContext;
+
+  const first = publisher.publish(ctx, "running");
+  const second = publisher.publish(ctx, "idle");
+
+  await Promise.resolve();
+  expect(gates).toHaveLength(1);
+  gates[0]!();
+  await first;
+  await Promise.resolve();
+  expect(gates).toHaveLength(2);
+  gates[1]!();
+  await second;
+
+  expect(payloads.map((payload) => JSON.parse(payload).state)).toEqual(["running", "idle"]);
 });
 
 test("publisher sends active tools using the current_tool protocol field", async () => {
