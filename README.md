@@ -139,7 +139,8 @@ Templates use `zellij-template-render` components and typed actions:
 {% endcall %}
 ```
 
-Available actions are `actions.switch_tab(index)` and `actions.focus_pane(pane)`.
+Available actions are `actions.switch_to_session(name)`, `actions.switch_tab(index)`, and
+`actions.focus_pane(pane)`. Use `switch_to_session` only for non-current active sessions.
 Colors use `index:N` or `rgb:R,G,B`. `format` performs normal MiniJinja string
 formatting. `format_time` formats Unix timestamps.
 

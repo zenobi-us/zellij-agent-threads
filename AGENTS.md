@@ -30,7 +30,7 @@ moon run pi-extension:typecheck
 
 ## Coding workflow
 
-- Keep plugin protocol JSON small and backwards-compatible.
+- Keep plugin protocol JSON small and backwards-compatible unless a linked issue or ADR explicitly approves a breaking protocol change.
 - Validate Rust behavior with host-target unit tests plus WASM `cargo check`.
 - Keep Pi extension best-effort: Zellij pipe failure must not break Pi startup.
 
