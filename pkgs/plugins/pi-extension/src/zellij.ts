@@ -8,8 +8,10 @@ export const DEFAULT_PLUGIN_ALIAS = "agent-threads";
 export const REFRESH_MS = 2_000;
 export const COMMAND_TIMEOUT_MS = 3_000;
 
-export function pipeArgs(payload: string, pluginAlias = DEFAULT_PLUGIN_ALIAS): string[] {
-  return ["pipe", "--plugin", pluginAlias, "--name", PIPE_NAME, "--", payload];
+export function pipeArgs(payload: string): string[] {
+  // Do not pass --plugin here. Zellij treats a targeted pipe as "load if not matched".
+  // Layout plugin configuration differs from a plain alias, so --plugin creates a hidden float.
+  return ["pipe", "--name", PIPE_NAME, "--", payload];
 }
 
 export type AgentState = "idle" | "running" | "shutdown";
@@ -194,7 +196,7 @@ export class ZellijPublisher {
    */
   pipeToPlugin(payload: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("zellij", pipeArgs(payload, this.pluginAlias), {
+      const child = spawn("zellij", pipeArgs(payload), {
         stdio: "ignore",
       });
       let settled = false;

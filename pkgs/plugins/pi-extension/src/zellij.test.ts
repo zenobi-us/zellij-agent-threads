@@ -4,21 +4,9 @@ import type { LogService } from "./log.js";
 import type { StatusWidget } from "./status.js";
 import { parsePaneTabInfo, pipeArgs, ZellijPublisher } from "./zellij.js";
 
-test("publisher targets configured plugin alias", () => {
+test("publisher broadcasts without launching a plugin", () => {
   expect(pipeArgs("payload")).toEqual([
     "pipe",
-    "--plugin",
-    "agent-threads",
-    "--name",
-    "agenthreads:agent",
-    "--",
-    "payload",
-  ]);
-
-  expect(pipeArgs("payload", "custom-agent-threads")).toEqual([
-    "pipe",
-    "--plugin",
-    "custom-agent-threads",
     "--name",
     "agenthreads:agent",
     "--",
