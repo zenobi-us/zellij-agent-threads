@@ -166,11 +166,12 @@ impl RenderModel {
                 })
                 .sum::<usize>()
         };
-        let event_rows = if self.agents.is_empty() {
-            0
-        } else {
-            1 + self.events.len() + usize::from(self.has_error)
-        };
+        let event_rows = usize::from(self.has_error)
+            + if self.agents.is_empty() {
+                0
+            } else {
+                1 + self.events.len()
+            };
         blank_rows(viewport_rows.saturating_sub(4 + session_rows + agent_rows + event_rows))
     }
 }
@@ -199,20 +200,7 @@ fn agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usi
             .unwrap_or_default();
     }
 
-    state
-        .agents
-        .values()
-        .filter(|agent| {
-            let Some(agent_session) = agent.zellij_session.as_deref() else {
-                return true;
-            };
-            agent_session == session.name
-                || !state
-                    .zellij_sessions
-                    .values()
-                    .any(|native| !native.current && native.name == agent_session)
-        })
-        .count()
+    local_session_agents(session, state).count()
 }
 
 fn running_agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usize {
@@ -224,21 +212,25 @@ fn running_agent_count_for_session(session: &ZellijSession, state: &RuntimeState
             .unwrap_or_default();
     }
 
-    state
-        .agents
-        .values()
+    local_session_agents(session, state)
         .filter(|agent| agent.state == crate::runtime::AgentState::Running)
-        .filter(|agent| {
-            let Some(agent_session) = agent.zellij_session.as_deref() else {
-                return true;
-            };
-            agent_session == session.name
-                || !state
-                    .zellij_sessions
-                    .values()
-                    .any(|native| !native.current && native.name == agent_session)
-        })
         .count()
+}
+
+fn local_session_agents<'a>(
+    session: &'a ZellijSession,
+    state: &'a RuntimeState,
+) -> impl Iterator<Item = &'a crate::runtime::AgentReport> {
+    state.agents.values().filter(|agent| {
+        let Some(agent_session) = agent.zellij_session.as_deref() else {
+            return true;
+        };
+        agent_session == session.name
+            || !state
+                .zellij_sessions
+                .values()
+                .any(|native| !native.current && native.name == agent_session)
+    })
 }
 
 fn blank_rows(rows: usize) -> String {

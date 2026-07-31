@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use zellij_template_render::{
-    error_frame as shared_error_frame, ActionRegistry, ButtonPresentation, ButtonView, Environment,
-    Error, ErrorKind, Frame, Renderer, TemplateContext, TemplateHost, Value, Viewport,
+    ActionRegistry, ButtonPresentation, ButtonView, Environment, Error, ErrorKind, Frame, Renderer,
+    TemplateContext, TemplateHost, Value, Viewport,
 };
 use zellij_tile::prelude::ModeInfo;
 
@@ -69,14 +69,36 @@ impl AgentRenderer {
     }
 
     pub(crate) fn error_frame(&self, error: &Error, rows: usize, cols: usize) -> RenderedFrame {
-        let mut frame = shared_error_frame(error, Viewport { rows, cols });
+        let mut frame = error_frame(error, rows, cols);
         frame.refresh_after = self.host.refresh_after();
         frame
     }
 }
 
 pub(crate) fn error_frame(error: &Error, rows: usize, cols: usize) -> RenderedFrame {
-    shared_error_frame(error, Viewport { rows, cols })
+    let lines = wrap_error_lines(&format!("template error: {error}"), rows, cols);
+    let hitboxes = lines
+        .iter()
+        .map(|_| std::iter::repeat_with(|| None).take(cols).collect())
+        .collect();
+    Frame {
+        lines,
+        hitboxes,
+        refresh_after: None,
+    }
+}
+
+fn wrap_error_lines(message: &str, rows: usize, cols: usize) -> Vec<String> {
+    if rows == 0 || cols == 0 {
+        return Vec::new();
+    }
+
+    let chars: Vec<char> = message.chars().collect();
+    chars
+        .chunks(cols)
+        .take(rows)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
 }
 
 fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
@@ -346,9 +368,13 @@ mod tests {
             .join("\n");
 
         assert!(output.find("Sessions") < output.find("Agents"));
-        assert!(output.contains("z current 1a 1r 1c 2t 3p"));
-        assert!(output.contains("other active 0c 0t 0p"));
-        assert!(!output.contains("other active 0a"));
+        assert!(output.contains("z 1a"));
+        assert!(output.contains("other"));
+        assert!(!output.contains("other 0a"));
+        assert!(!output.contains("1r"));
+        assert!(!output.contains("1c"));
+        assert!(!output.contains("2t"));
+        assert!(!output.contains("3p"));
         assert!(frame.hitboxes.iter().flatten().any(|action| {
             matches!(
                 action,
@@ -361,6 +387,29 @@ mod tests {
                 Some(ClickAction::SwitchToSession { session }) if session == "z"
             )
         }));
+    }
+
+    #[test]
+    fn default_template_renders_errors_without_agents() {
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
+        let runtime = RuntimeState {
+            last_error: Some("session synchronization unavailable".into()),
+            ..RuntimeState::default()
+        };
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        let frame = renderer
+            .render(&ModeInfo::default(), &model, 8, 80)
+            .unwrap();
+        let output = frame
+            .lines
+            .iter()
+            .map(|line| plain_text(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(output.contains("pipe error"));
+        assert!(output.contains("session synchronization unavailable"));
+        assert!(!output.contains("Events"));
     }
 
     #[test]
@@ -469,6 +518,21 @@ mod tests {
         assert!(error
             .to_string()
             .contains("switch_tab expects exactly one argument"));
+    }
+
+    #[test]
+    fn error_frame_wraps_long_template_errors() {
+        let error = Error::new(
+            ErrorKind::InvalidOperation,
+            "switch_tab expects exactly one argument".to_string(),
+        );
+        let frame = error_frame(&error, 4, 20);
+        let output = frame.lines.join("");
+
+        assert_eq!(frame.lines.len(), 4);
+        assert!(frame.hitboxes.iter().all(|line| line.len() == 20));
+        assert!(output.contains("template error:"));
+        assert!(output.contains("switch_tab expects"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-{%- from "tree-link.jinja" import tree_link_line -%}
+{%- from "tree_link.jinja" import tree_link -%}
 {%- if agents | length > 0 -%}
   {%- call Flex(shrink=0) -%}
   {{- " Agents " | bold | bg("index:6") | fg("index:0") -}}
@@ -23,11 +23,11 @@
 
     {%- for agent in tab.agents -%}
       {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
-      {%- set agent_label = "%s %s %s@%s" | format(agent.pane, icon, agent.harness, agent.model) -%}
+      {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
       {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}
         {{ " " }} {{ tree_link(loop.index0, tab.agents | length) | dim }} {{ icon }} {{ t(agent_label, agent.focused) }}
         {%- if agent.state == "running" and agent.current_tool %}
-          {{ indicator(agent.focused) }}  {{ agent.current_tool | bold if agent.focused else agent.current_tool | dim }}
+          {{ "┃" | bold if agent.focused else "┃" | dim }}  {{ agent.current_tool | bold if agent.focused else agent.current_tool | dim }}
         {%- endif -%}
       {%- endcall -%}
     {%- endfor -%}
