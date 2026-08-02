@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn default_template_renders_orphans() {
+    fn default_template_ignores_agents_without_tabs() {
         let runtime = RuntimeState {
             agents: BTreeMap::from([("s".into(), agent_session("s", "1", "Orphan"))]),
             ..RuntimeState::default()
@@ -358,8 +358,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(output.contains("Orphans"));
-        assert!(output.contains("Orphan"));
+        assert!(!output.contains("Agents"));
+        assert!(!output.contains("Orphan"));
     }
 
     #[test]

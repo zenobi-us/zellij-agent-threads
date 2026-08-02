@@ -71,10 +71,16 @@ pub(super) struct AgentLine {
 impl RenderModel {
     /// Builds a testable render snapshot from runtime state and render config.
     pub(crate) fn from_runtime(state: &RuntimeState, config: &RenderConfig) -> Self {
+        let tab_ids = state
+            .tabs
+            .keys()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
         let agents: Vec<_> = state
             .agents
             .values()
             .filter(|agent| agent_belongs_to_current_session(agent, state))
+            .filter(|agent| agent.tab_id.is_some_and(|tab_id| tab_ids.contains(&tab_id)))
             .map(|session| agent_line(session, state))
             .collect();
         let zellij_session = state
@@ -124,18 +130,6 @@ impl RenderModel {
                     .collect(),
             })
             .collect();
-        let tab_ids = state
-            .tabs
-            .keys()
-            .copied()
-            .collect::<std::collections::BTreeSet<_>>();
-        let orphans = state
-            .agents
-            .values()
-            .filter(|agent| agent_belongs_to_current_session(agent, state))
-            .filter(|agent| agent.tab_id.is_none_or(|tab_id| !tab_ids.contains(&tab_id)))
-            .map(|agent| agent_line(agent, state))
-            .collect::<Vec<_>>();
 
         mark_single_agent_active_tabs(&mut tabs);
         Self {
@@ -145,7 +139,7 @@ impl RenderModel {
             zellij_session,
             harness,
             tabs,
-            orphans,
+            orphans: Vec::new(),
             events: state.events.iter().rev().cloned().collect(),
             has_error: state.last_error.is_some(),
             last_error: state.last_error.clone().unwrap_or_default(),
@@ -188,15 +182,6 @@ impl RenderModel {
                         .sum::<usize>()
                 })
                 .sum::<usize>()
-                + if self.orphans.is_empty() {
-                    0
-                } else {
-                    1 + self
-                        .orphans
-                        .iter()
-                        .map(|agent| 3 + usize::from(agent.state == "running"))
-                        .sum::<usize>()
-                }
         };
         let event_rows = usize::from(self.has_error)
             + if self.agents.is_empty() {
@@ -651,7 +636,7 @@ mod tests {
     }
 
     #[test]
-    fn agents_without_matching_tab_metadata_render_as_orphans() {
+    fn agents_without_matching_tab_metadata_are_ignored() {
         let runtime = RuntimeState {
             tabs: BTreeMap::from([(9, "Empty".into())]),
             agents: BTreeMap::from([(
@@ -678,14 +663,14 @@ mod tests {
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
 
-        assert_eq!(model.agents.len(), 1);
+        assert!(model.agents.is_empty());
         assert_eq!(model.tabs.len(), 1);
         assert!(model.tabs[0].agents.is_empty());
-        assert_eq!(model.orphans.len(), 1);
+        assert!(model.orphans.is_empty());
     }
 
     #[test]
-    fn agents_render_when_tab_metadata_has_not_arrived() {
+    fn agents_wait_for_tab_metadata_before_rendering() {
         let runtime = RuntimeState {
             agents: BTreeMap::from([(
                 "s".into(),
@@ -711,9 +696,9 @@ mod tests {
 
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
 
-        assert_eq!(model.agents.len(), 1);
+        assert!(model.agents.is_empty());
         assert!(model.tabs.is_empty());
-        assert_eq!(model.orphans.len(), 1);
+        assert!(model.orphans.is_empty());
     }
 
     #[test]

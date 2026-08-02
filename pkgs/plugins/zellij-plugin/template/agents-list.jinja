@@ -26,14 +26,4 @@
     {%- endfor -%}
   {%- endfor -%}
 
-  {%- if orphans | length > 0 -%}
-    {%- call Flex(shrink=0) -%}{{- " Orphans " | bg("index:8") | dim -}}{%- endcall -%}
-    {%- for agent in orphans -%}
-      {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
-      {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
-      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}{{- tree.prefix_line(loop.index0, loop.length) | dim }} {{ t(agent_label, agent.focused) }}
-        {%- if agent.state == "running" and agent.current_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [loop.last]) | dim }} {{ agent.current_tool | dim }}{%- endif -%}
-      {%- endcall -%}
-    {%- endfor -%}
-  {%- endif -%}
 {%- endif -%}
