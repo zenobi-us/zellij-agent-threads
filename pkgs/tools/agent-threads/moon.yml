@@ -1,0 +1,47 @@
+---
+$schema: "file://../../../.moon/cache/schemas/project.json"
+
+language: typescript
+layer: tool
+
+project:
+  name: agent-threads
+
+toolchains:
+  default: ["javascript", "bun"]
+
+tasks:
+  typecheck:
+    command: "bunx tsc --noEmit"
+    inputs:
+      - "package.json"
+      - "tsconfig.json"
+      - "src/**/*.ts"
+
+  build:
+    deps:
+      - "~:typecheck"
+    command: "noop"
+
+  lint:
+    deps:
+      - "~:typecheck"
+    command: "noop"
+
+  test:
+    command: "bun test"
+    inputs:
+      - "src/**/*.ts"
+
+  install:
+    script: |
+      set -euo pipefail
+      mkdir -p "$HOME/.local/bin"
+      wrapper="$HOME/.local/bin/agent-threads"
+      printf '%s\n' '#!/usr/bin/env sh' "exec bun '$PWD/src/index.ts' \"\$@\"" > "$wrapper"
+      chmod +x "$wrapper"
+    inputs:
+      - "src/**/*.ts"
+    options:
+      cache: false
+      runInCI: false
