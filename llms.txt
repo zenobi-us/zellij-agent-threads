@@ -1,4 +1,5 @@
 # Docs
 
 - [Why Zellij Agent Threads](/why): Why Zellij Agent Threads exists: a Zellij panel for tracking agents across panes and tabs.
+- [How it works](/how-it-works): How Pi reports, the agent-threads store, and the Zellij plugin keep the agent list current.
 - [Quickstart](/quickstart): Create a workspace, write a manifest, and run Boxfiles.
