@@ -1,19 +1,23 @@
+{% import "tree.jinja" as tree %}
+{%- macro SessionLabel(index, total, session) %}
+  {%- set agent_suffix = " %sa" | format(session.agent_count) if session.agent_count > 0 else "" -%}
+  {%- set session_label = "%s%s" | format(session.name, agent_suffix) -%}
+  {{- tree.prefix_line(index, total) | dim }}
+  {%- if session.current -%}
+    {{- session_label | bold -}} {{ session.id | dim }}
+  {%- else -%}
+    {{- session_label | dim -}} {{ session.id | dim }}
+  {%- endif -%}
+{%- endmacro %}
 {%- if sessions | length > 0 -%}
   {%- call Flex(shrink=0) -%}
-  {{- " Sessions " | bold | bg("index:3") | fg("index:0") -}}
+  {{- " Sessions " | bold  -}}
   {%- endcall -%}
-
   {%- for session in sessions -%}
-    {%- set agent_suffix = " %sa" | format(session.agent_count) if session.agent_count > 0 else "" -%}
-    {%- set session_label = " %s%s " | format(session.name, agent_suffix) -%}
     {%- if session.current -%}
-      {%- call Flex(shrink=0) -%}
-      {{- session_label | bold | bg("index:3") | fg("index:0") -}}
-      {%- endcall -%}
+      {%- call Flex(shrink=0) -%}{{ SessionLabel(loop.index0, loop.length, session) }}{%- endcall -%}
     {%- else -%}
-      {%- call Button(on_click=actions.switch_to_session(session.name), focused=false) -%}
-      {{- session_label | bg("index:8") | dim -}}
-      {%- endcall -%}
+      {%- call Button(on_click=actions.switch_to_session(session.name), focused=false) -%}{{ SessionLabel(loop.index0, loop.length, session) }}{%- endcall -%}
     {%- endif -%}
   {%- endfor -%}
 {%- else -%}
