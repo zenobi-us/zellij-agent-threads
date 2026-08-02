@@ -4,7 +4,9 @@ mod model;
 mod template;
 
 pub(crate) use model::RenderModel;
-pub(crate) use template::{error_frame, AgentRenderer, ClickAction, RenderedFrame, TemplateError};
+pub(crate) use template::{
+    error_frame, loading_frame, AgentRenderer, ClickAction, RenderedFrame, TemplateError,
+};
 
 pub(crate) fn paint_frame(frame: &RenderedFrame, rows: usize, cols: usize) {
     if rows == 0 || cols == 0 {

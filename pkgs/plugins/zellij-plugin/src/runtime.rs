@@ -14,10 +14,13 @@ use zellij_tile::prelude::{PaneId, PipeMessage, SessionInfo};
 
 /// Name of the Zellij pipe that receives Pi Agent Reports.
 pub(crate) const AGENT_PIPE_NAME: &str = "agenthreads:agent";
-pub(crate) const SUMMARY_PIPE_NAME: &str = "agenthreads:summary";
 pub(crate) const AGENT_LEASE: Duration = Duration::from_secs(10);
+pub(crate) const SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+#[allow(dead_code)]
 pub(crate) const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(10);
+#[allow(dead_code)]
 pub(crate) const SESSION_POLL_TIMEOUT: Duration = Duration::from_secs(3);
+#[allow(dead_code)]
 pub(crate) const SESSION_SUMMARY_LEASE: Duration = Duration::from_secs(30);
 
 /// Mutable state for one running plugin instance.
@@ -25,6 +28,7 @@ pub(crate) const SESSION_SUMMARY_LEASE: Duration = Duration::from_secs(30);
 /// This is the plugin's session database plus small UI state. Callers should use
 /// methods on this type instead of mutating fields directly when behaviour has
 /// side effects, such as recording event history.
+#[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct RuntimeState {
     pub(crate) agents: BTreeMap<String, AgentReport>,
@@ -33,10 +37,15 @@ pub(crate) struct RuntimeState {
     pub(crate) session_summary_leases: BTreeMap<String, Duration>,
     pub(crate) lease_clock: Duration,
     pub(crate) zellij_sessions: BTreeMap<String, ZellijSession>,
+    pub(crate) session_signatures: BTreeMap<String, BTreeSet<String>>,
+    pub(crate) next_session_stable_id: u64,
     pub(crate) poll_queue: VecDeque<PollTarget>,
     pub(crate) active_poll: Option<ActivePoll>,
     pub(crate) next_poll_at: Option<Duration>,
     pub(crate) next_poll_id: u64,
+    pub(crate) active_snapshot: Option<ActiveSnapshot>,
+    pub(crate) next_snapshot_at: Option<Duration>,
+    pub(crate) next_snapshot_id: u64,
     pub(crate) session_polling_enabled: bool,
     pub(crate) tabs: BTreeMap<usize, String>,
     pub(crate) events: VecDeque<String>,
@@ -71,12 +80,13 @@ pub(crate) struct ActivePoll {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SessionSyncOutcome {
-    pub(crate) changed: bool,
-    pub(crate) canceled_active_poll: bool,
+pub(crate) struct ActiveSnapshot {
+    id: u64,
+    started_at: Duration,
 }
 
 /// Command data for one serialized Zellij session-summary poll.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PollCommand {
     pub(crate) id: u64,
@@ -85,6 +95,7 @@ pub(crate) struct PollCommand {
     pub(crate) payload: String,
 }
 
+#[allow(dead_code)]
 impl PollCommand {
     pub(crate) fn context(&self) -> BTreeMap<String, String> {
         BTreeMap::from([
@@ -92,6 +103,21 @@ impl PollCommand {
             ("poll_id".into(), self.id.to_string()),
             ("session".into(), self.session_name.clone()),
             ("generation_id".into(), self.generation_id.clone()),
+        ])
+    }
+}
+
+/// Command data for one singleton-store snapshot poll.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotCommand {
+    pub(crate) id: u64,
+}
+
+impl SnapshotCommand {
+    pub(crate) fn context(&self) -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("operation".into(), "agent-threads:snapshot".into()),
+            ("snapshot_id".into(), self.id.to_string()),
         ])
     }
 }
@@ -108,10 +134,42 @@ pub(crate) struct ZellijSession {
     pub(crate) current: bool,
 }
 
+#[allow(dead_code)]
 impl RuntimeState {
     /// Records plugin startup in the event log.
     pub(crate) fn load(&mut self) {
         self.push_event("plugin loaded".into());
+        self.next_snapshot_at = Some(Duration::ZERO);
+    }
+
+    pub(crate) fn next_snapshot_poll(&self) -> Option<Duration> {
+        if self.active_snapshot.is_some() {
+            return None;
+        }
+        self.next_snapshot_at
+            .map(|due| due.saturating_sub(self.lease_clock))
+    }
+
+    pub(crate) fn begin_snapshot_poll(&mut self) -> Option<SnapshotCommand> {
+        if self.active_snapshot.is_some() {
+            return None;
+        }
+        self.next_snapshot_id += 1;
+        let command = SnapshotCommand {
+            id: self.next_snapshot_id,
+        };
+        self.active_snapshot = Some(ActiveSnapshot {
+            id: command.id,
+            started_at: self.lease_clock,
+        });
+        self.next_snapshot_at = Some(self.lease_clock + SNAPSHOT_POLL_INTERVAL);
+        Some(command)
+    }
+
+    pub(crate) fn request_snapshot_now(&mut self) {
+        if self.active_snapshot.is_none() {
+            self.next_snapshot_at = Some(self.lease_clock);
+        }
     }
 
     pub(crate) fn sync_pane_focus(
@@ -162,31 +220,88 @@ impl RuntimeState {
             .iter()
             .find(|session| session.is_current_session)
             .map(|session| session.name.clone());
-        let next_sessions = sessions
-            .iter()
-            .map(native_session)
-            .collect::<BTreeMap<_, _>>();
-        if self.zellij_session == current && self.zellij_sessions == next_sessions {
+        let previous_sessions = self.zellij_sessions.clone();
+        let previous_signatures = self.session_signatures.clone();
+        let mut claimed = BTreeSet::new();
+        let mut next_sessions = BTreeMap::new();
+        let mut next_signatures = BTreeMap::new();
+
+        for session in sessions {
+            let signature = session_signature(session);
+            let stable_id = self.stable_session_id(
+                session,
+                &signature,
+                &previous_sessions,
+                &previous_signatures,
+                &mut claimed,
+            );
+            next_signatures.insert(stable_id.clone(), signature);
+            next_sessions.insert(stable_id.clone(), native_session(session, stable_id));
+        }
+
+        if self.zellij_session == current
+            && self.zellij_sessions == next_sessions
+            && self.session_signatures == next_signatures
+        {
             return false;
         }
         self.zellij_session = current;
         self.zellij_sessions = next_sessions;
+        self.session_signatures = next_signatures;
         self.drop_removed_session_work();
         true
     }
 
-    pub(crate) fn sync_zellij_sessions_with_outcome(
+    fn stable_session_id(
         &mut self,
-        sessions: &[SessionInfo],
-    ) -> SessionSyncOutcome {
-        let had_active_poll = self.active_poll.is_some();
-        let changed = self.sync_zellij_sessions(sessions);
-        SessionSyncOutcome {
-            changed,
-            canceled_active_poll: had_active_poll && self.active_poll.is_none(),
+        session: &SessionInfo,
+        signature: &BTreeSet<String>,
+        previous_sessions: &BTreeMap<String, ZellijSession>,
+        previous_signatures: &BTreeMap<String, BTreeSet<String>>,
+        claimed: &mut BTreeSet<String>,
+    ) -> String {
+        if let Some(id) = previous_sessions.iter().find_map(|(id, previous)| {
+            (previous.name == session.name
+                && !claimed.contains(id)
+                && !session_age_decreased(session, previous))
+            .then(|| id.clone())
+        }) {
+            claimed.insert(id.clone());
+            return id;
         }
+
+        if !signature.is_empty() {
+            if let Some(id) = previous_signatures.iter().find_map(|(id, previous)| {
+                let previous_session = previous_sessions.get(id)?;
+                (previous == signature
+                    && !claimed.contains(id)
+                    && !session_age_decreased(session, previous_session))
+                .then(|| id.clone())
+            }) {
+                claimed.insert(id.clone());
+                return id;
+            }
+        }
+
+        if session.is_current_session {
+            if let Some(id) = previous_sessions.iter().find_map(|(id, previous)| {
+                (previous.current
+                    && !claimed.contains(id)
+                    && !session_age_decreased(session, previous))
+                .then(|| id.clone())
+            }) {
+                claimed.insert(id.clone());
+                return id;
+            }
+        }
+
+        self.next_session_stable_id += 1;
+        let id = format!("session:{}", self.next_session_stable_id);
+        claimed.insert(id.clone());
+        id
     }
 
+    #[cfg(test)]
     pub(crate) fn set_session_polling_enabled(&mut self, enabled: bool) -> bool {
         self.session_polling_enabled = enabled;
         if enabled {
@@ -363,6 +478,76 @@ impl RuntimeState {
         true
     }
 
+    pub(crate) fn handle_snapshot_result(
+        &mut self,
+        exit_code: Option<i32>,
+        stdout: &[u8],
+        stderr: &[u8],
+        context: &BTreeMap<String, String>,
+    ) -> bool {
+        if context.get("operation").map(String::as_str) != Some("agent-threads:snapshot") {
+            return false;
+        }
+        let Some(active) = &self.active_snapshot else {
+            return false;
+        };
+        if context
+            .get("snapshot_id")
+            .and_then(|id| id.parse::<u64>().ok())
+            != Some(active.id)
+        {
+            return false;
+        }
+        self.active_snapshot = None;
+
+        if exit_code != Some(0) {
+            let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+            self.last_error = Some(if stderr.is_empty() {
+                "agent snapshot failed".into()
+            } else {
+                format!("agent snapshot failed: {stderr}")
+            });
+            return true;
+        }
+
+        let Ok(output) = std::str::from_utf8(stdout) else {
+            self.last_error = Some("agent snapshot returned invalid utf8".into());
+            return true;
+        };
+        let Ok(snapshot) = serde_json::from_str::<AgentSnapshot>(output.trim()) else {
+            self.last_error = Some("agent snapshot returned malformed output".into());
+            return true;
+        };
+        if snapshot.version != 1 {
+            self.last_error = Some(format!(
+                "unsupported agent snapshot version {}",
+                snapshot.version
+            ));
+            return true;
+        }
+
+        let old_agents = self.agents.clone();
+        self.agents = snapshot
+            .agents
+            .into_iter()
+            .filter(|agent| agent.state != AgentState::Shutdown)
+            .filter(|agent| self.agent_pane_is_live(agent))
+            .map(|agent| (agent.cache_key(), agent))
+            .collect();
+        self.agent_leases = self
+            .agents
+            .keys()
+            .cloned()
+            .map(|key| (key, self.lease_clock))
+            .collect();
+        let had_error = self.last_error.take().is_some();
+        if self.agents != old_agents {
+            self.push_event(format!("snapshot {} agent(s)", self.agents.len()));
+        }
+        had_error || self.agents != old_agents
+    }
+
+    #[cfg(test)]
     pub(crate) fn session_summary_output(&self, payload: Option<&str>) -> Option<String> {
         let request = serde_json::from_str::<SessionSummaryRequest>(payload?).ok()?;
         if request.version != 1 {
@@ -558,6 +743,33 @@ impl RuntimeState {
         }
     }
 
+    fn agent_pane_is_live(&self, agent: &AgentReport) -> bool {
+        let Some(pane_id) = agent.pane_id.as_deref() else {
+            return true;
+        };
+        if self.zellij_sessions.is_empty() {
+            return true;
+        }
+
+        let mut sessions = self.zellij_sessions.values().collect::<Vec<_>>();
+        if let Some(name) = agent.zellij_session.as_deref() {
+            let named = sessions
+                .iter()
+                .copied()
+                .filter(|session| session.name == name)
+                .collect::<Vec<_>>();
+            if !named.is_empty() {
+                sessions = named;
+            }
+        }
+        let pane_ids = pane_id_variants(pane_id);
+        sessions.into_iter().any(|session| {
+            self.session_signatures
+                .get(&session.generation_id)
+                .is_some_and(|signature| pane_ids.iter().any(|pane_id| signature.contains(pane_id)))
+        })
+    }
+
     /// Returns whether a decoded Agent Report changes anything the plugin draws.
     fn agent_update_changes_render(&self, session: &AgentReport) -> bool {
         let key = session.cache_key();
@@ -622,6 +834,13 @@ struct SessionSummaryReply {
     agent_count: usize,
     running_agent_count: usize,
     fresh_at_millis: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentSnapshot {
+    version: u8,
+    agents: Vec<AgentReport>,
 }
 
 /// JSON payload sent by the Pi extension over the Zellij pipe.
@@ -705,24 +924,37 @@ fn pane_id_matches(session_pane_id: &str, pane_id: PaneId) -> bool {
     }
 }
 
-fn native_session(session: &SessionInfo) -> (String, ZellijSession) {
-    let generation_id = session_generation_id(&session.name, session.creation_time);
-    (
-        generation_id.clone(),
-        ZellijSession {
-            generation_id,
-            name: session.name.clone(),
-            connected_client_count: session.connected_clients + session.web_client_count,
-            tab_count: session.tabs.len(),
-            pane_count: session.panes.panes.values().map(Vec::len).sum(),
-            created_at_seconds: session.creation_time.as_secs(),
-            current: session.is_current_session,
-        },
-    )
+fn pane_id_variants(pane_id: &str) -> Vec<String> {
+    if let Some(id) = pane_id.strip_prefix("terminal_") {
+        vec![pane_id.to_string(), id.to_string()]
+    } else {
+        vec![pane_id.to_string(), format!("terminal_{pane_id}")]
+    }
 }
 
-fn session_generation_id(name: &str, creation_time: Duration) -> String {
-    format!("{}:{}", name, creation_time.as_nanos())
+fn session_age_decreased(session: &SessionInfo, previous: &ZellijSession) -> bool {
+    session.creation_time.as_secs() < previous.created_at_seconds
+}
+
+fn native_session(session: &SessionInfo, generation_id: String) -> ZellijSession {
+    ZellijSession {
+        generation_id,
+        name: session.name.clone(),
+        connected_client_count: session.connected_clients + session.web_client_count,
+        tab_count: session.tabs.len(),
+        pane_count: session.panes.panes.values().map(Vec::len).sum(),
+        created_at_seconds: session.creation_time.as_secs(),
+        current: session.is_current_session,
+    }
+}
+
+fn session_signature(session: &SessionInfo) -> BTreeSet<String> {
+    session
+        .panes
+        .panes
+        .values()
+        .flat_map(|panes| panes.iter().map(pane_key))
+        .collect()
 }
 
 fn pane_key(pane: &zellij_tile::prelude::PaneInfo) -> String {
@@ -799,6 +1031,32 @@ mod tests {
         }
     }
 
+    fn zellij_session_with_terminal_panes(
+        name: &str,
+        current: bool,
+        created_at_seconds: u64,
+        pane_ids: &[u32],
+    ) -> SessionInfo {
+        SessionInfo {
+            name: name.into(),
+            is_current_session: current,
+            creation_time: Duration::from_secs(created_at_seconds),
+            panes: zellij_tile::prelude::PaneManifest {
+                panes: HashMap::from([(
+                    0,
+                    pane_ids
+                        .iter()
+                        .map(|id| zellij_tile::prelude::PaneInfo {
+                            id: *id,
+                            ..Default::default()
+                        })
+                        .collect(),
+                )]),
+            },
+            ..Default::default()
+        }
+    }
+
     fn poll_reply(generation_id: &str, agent_count: usize, running_agent_count: usize) -> Vec<u8> {
         serde_json::json!({
             "version": 1,
@@ -806,6 +1064,15 @@ mod tests {
             "agent_count": agent_count,
             "running_agent_count": running_agent_count,
             "fresh_at_millis": 42
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    fn snapshot_reply(agents: Vec<AgentReport>) -> Vec<u8> {
+        serde_json::json!({
+            "version": 1,
+            "agents": agents,
         })
         .to_string()
         .into_bytes()
@@ -911,6 +1178,96 @@ mod tests {
     }
 
     #[test]
+    fn plugin_snapshot_replaces_in_memory_agents() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.handle_pipe(pipe_message(session("old", Some("1")))));
+        let command = runtime.begin_snapshot_poll().unwrap();
+        let mut next = session("new", Some("2"));
+        next.title = Some("from store".into());
+
+        assert!(runtime.handle_snapshot_result(
+            Some(0),
+            &snapshot_reply(vec![next]),
+            &[],
+            &command.context(),
+        ));
+
+        assert_eq!(runtime.agents.len(), 1);
+        assert!(runtime.agents.contains_key("2"));
+        assert_eq!(runtime.agents["2"].title.as_deref(), Some("from store"));
+        assert!(runtime.agent_leases.contains_key("2"));
+    }
+
+    #[test]
+    fn plugin_snapshot_ignores_store_rows_for_closed_panes() {
+        let mut runtime = RuntimeState::default();
+        assert!(
+            runtime.sync_zellij_sessions(&[zellij_session_with_terminal_panes(
+                "work",
+                true,
+                1,
+                &[2]
+            )])
+        );
+        let command = runtime.begin_snapshot_poll().unwrap();
+        let mut stale = session("stale", Some("1"));
+        stale.zellij_session = Some("work".into());
+        let mut fresh = session("fresh", Some("2"));
+        fresh.zellij_session = Some("work".into());
+
+        assert!(runtime.handle_snapshot_result(
+            Some(0),
+            &snapshot_reply(vec![stale, fresh]),
+            &[],
+            &command.context(),
+        ));
+
+        assert_eq!(runtime.agents.len(), 1);
+        assert!(runtime.agents.contains_key("2"));
+    }
+
+    #[test]
+    fn plugin_snapshot_keeps_live_pane_when_report_session_name_is_stale() {
+        let mut runtime = RuntimeState::default();
+        assert!(
+            runtime.sync_zellij_sessions(&[zellij_session_with_terminal_panes(
+                "renamed",
+                true,
+                1,
+                &[2]
+            )])
+        );
+        let command = runtime.begin_snapshot_poll().unwrap();
+        let mut agent = session("fresh", Some("2"));
+        agent.zellij_session = Some("old".into());
+
+        assert!(runtime.handle_snapshot_result(
+            Some(0),
+            &snapshot_reply(vec![agent]),
+            &[],
+            &command.context(),
+        ));
+
+        assert!(runtime.agents.contains_key("2"));
+    }
+
+    #[test]
+    fn malformed_snapshot_keeps_old_agents_and_records_error() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.handle_pipe(pipe_message(session("old", Some("1")))));
+        let before = runtime.agents.clone();
+        let command = runtime.begin_snapshot_poll().unwrap();
+
+        assert!(runtime.handle_snapshot_result(Some(0), b"not-json", &[], &command.context(),));
+
+        assert_eq!(runtime.agents, before);
+        assert_eq!(
+            runtime.last_error.as_deref(),
+            Some("agent snapshot returned malformed output")
+        );
+    }
+
+    #[test]
     fn session_polling_queues_remote_sessions_one_at_a_time() {
         let mut runtime = RuntimeState::default();
         runtime.sync_zellij_sessions(&[
@@ -1008,9 +1365,9 @@ mod tests {
             zellij_session("beta", false, 3),
         ]);
         runtime.session_summaries.insert(
-            "alpha:2000000000".into(),
+            "session:2".into(),
             SessionSummary {
-                generation_id: "alpha:2000000000".into(),
+                generation_id: "session:2".into(),
                 agent_count: 1,
                 running_agent_count: 1,
                 fresh_at_millis: 0,
@@ -1018,11 +1375,11 @@ mod tests {
         );
         runtime
             .session_summary_leases
-            .insert("alpha:2000000000".into(), Duration::ZERO);
+            .insert("session:2".into(), Duration::ZERO);
         runtime.set_session_polling_enabled(true);
         runtime.begin_session_poll_cycle();
         let active = runtime.next_poll_command().unwrap();
-        assert_eq!(active.generation_id, "alpha:2000000000");
+        assert_eq!(active.generation_id, "session:2");
 
         runtime.sync_zellij_sessions(&[zellij_session("local", true, 1)]);
 
@@ -1063,11 +1420,11 @@ mod tests {
         runtime.advance_lease_clock_to(Duration::from_millis(12));
 
         let output = runtime
-            .session_summary_output(Some(r#"{"version":1,"generation_id":"local:7000000000"}"#))
+            .session_summary_output(Some(r#"{"version":1,"generation_id":"session:1"}"#))
             .unwrap();
         let value = serde_json::from_str::<serde_json::Value>(&output).unwrap();
 
-        assert_eq!(value["generation_id"], "local:7000000000");
+        assert_eq!(value["generation_id"], "session:1");
         assert_eq!(value["agent_count"], 2);
         assert_eq!(value["running_agent_count"], 1);
         assert_eq!(value["fresh_at_millis"], 12);
@@ -1185,7 +1542,7 @@ mod tests {
             .zellij_sessions
             .values()
             .any(|session| session.name == "new"));
-        assert_ne!(
+        assert_eq!(
             runtime
                 .zellij_sessions
                 .values()
@@ -1197,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn native_sessions_replace_removed_records_and_keep_generation_identity() {
+    fn native_sessions_keep_identity_as_reported_age_increases() {
         let mut runtime = RuntimeState::default();
         let first = zellij_tile::prelude::SessionInfo {
             name: "work".into(),
@@ -1235,7 +1592,7 @@ mod tests {
         assert_eq!(runtime.zellij_sessions.len(), 1);
         let session = runtime.zellij_sessions.values().next().unwrap();
         assert_eq!(session.name, "work");
-        assert_ne!(session.generation_id, original_generation);
+        assert_eq!(session.generation_id, original_generation);
         assert_eq!(session.connected_client_count, 3);
         assert_eq!(session.tab_count, 1);
         assert_eq!(session.pane_count, 1);
@@ -1243,7 +1600,26 @@ mod tests {
     }
 
     #[test]
-    fn native_session_generation_includes_name_and_creation_time() {
+    fn native_session_age_decrease_gets_new_generation_identity() {
+        let mut runtime = RuntimeState::default();
+        assert!(runtime.sync_zellij_sessions(&[zellij_session("work", true, 30)]));
+        let original_generation = runtime
+            .zellij_sessions
+            .values()
+            .next()
+            .unwrap()
+            .generation_id
+            .clone();
+
+        assert!(runtime.sync_zellij_sessions(&[zellij_session("work", true, 1)]));
+
+        let session = runtime.zellij_sessions.values().next().unwrap();
+        assert_ne!(session.generation_id, original_generation);
+        assert_eq!(session.generation_id, "session:2");
+    }
+
+    #[test]
+    fn native_sessions_get_unique_runtime_session_ids() {
         let mut runtime = RuntimeState::default();
 
         assert!(runtime.sync_zellij_sessions(&[
@@ -1252,8 +1628,8 @@ mod tests {
         ]));
 
         assert_eq!(runtime.zellij_sessions.len(), 2);
-        assert!(runtime.zellij_sessions.contains_key("alpha:10000000000"));
-        assert!(runtime.zellij_sessions.contains_key("beta:10000000000"));
+        assert!(runtime.zellij_sessions.contains_key("session:1"));
+        assert!(runtime.zellij_sessions.contains_key("session:2"));
     }
 
     #[test]

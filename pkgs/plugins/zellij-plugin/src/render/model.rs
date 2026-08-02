@@ -16,6 +16,7 @@ pub(crate) struct RenderModel {
     pub(super) zellij_session: String,
     pub(super) harness: String,
     pub(super) tabs: Vec<TabLine>,
+    pub(super) orphans: Vec<AgentLine>,
     pub(super) events: Vec<String>,
     pub(super) has_error: bool,
     pub(super) last_error: String,
@@ -23,6 +24,7 @@ pub(crate) struct RenderModel {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct TabLine {
+    id: String,
     tab_id: Option<usize>,
     tab_name: String,
     agents: Vec<AgentLine>,
@@ -31,6 +33,7 @@ pub(super) struct TabLine {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct SessionLine {
+    id: String,
     generation_id: String,
     name: String,
     status: &'static str,
@@ -49,9 +52,11 @@ pub(super) struct SessionLine {
 /// not need to know about agent payload fields.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct AgentLine {
+    id: String,
     agent_id: String,
     session_name: String,
     state: &'static str,
+    pane_id: String,
     pane: String,
     cwd: String,
     model: String,
@@ -99,10 +104,13 @@ impl RenderModel {
                 .then_with(|| left.name.cmp(&right.name))
         });
 
+        let current_session_id =
+            current_session_id(state).unwrap_or_else(|| fallback_session_id(state));
         let mut tabs: Vec<_> = state
             .tabs
             .iter()
             .map(|(tab_id, tab_name)| TabLine {
+                id: tab_stable_id(&current_session_id, *tab_id),
                 tab_id: Some(tab_id + 1),
                 tab_name: tab_name.clone(),
                 active: Some(*tab_id) == state.active_tab,
@@ -114,6 +122,17 @@ impl RenderModel {
                     .collect(),
             })
             .collect();
+        let tab_ids = state
+            .tabs
+            .keys()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        let orphans = state
+            .agents
+            .values()
+            .filter(|agent| agent.tab_id.is_none_or(|tab_id| !tab_ids.contains(&tab_id)))
+            .map(|agent| agent_line(agent, state))
+            .collect::<Vec<_>>();
 
         mark_single_agent_active_tabs(&mut tabs);
         Self {
@@ -123,6 +142,7 @@ impl RenderModel {
             zellij_session,
             harness,
             tabs,
+            orphans,
             events: state.events.iter().rev().cloned().collect(),
             has_error: state.last_error.is_some(),
             last_error: state.last_error.clone().unwrap_or_default(),
@@ -165,6 +185,15 @@ impl RenderModel {
                         .sum::<usize>()
                 })
                 .sum::<usize>()
+                + if self.orphans.is_empty() {
+                    0
+                } else {
+                    1 + self
+                        .orphans
+                        .iter()
+                        .map(|agent| 3 + usize::from(agent.state == "running"))
+                        .sum::<usize>()
+                }
         };
         let event_rows = usize::from(self.has_error)
             + if self.agents.is_empty() {
@@ -178,6 +207,7 @@ impl RenderModel {
 
 fn session_line(session: &ZellijSession, state: &RuntimeState) -> SessionLine {
     SessionLine {
+        id: session.generation_id.clone(),
         generation_id: session.generation_id.clone(),
         name: session.name.clone(),
         status: if session.current { "current" } else { "active" },
@@ -192,44 +222,32 @@ fn session_line(session: &ZellijSession, state: &RuntimeState) -> SessionLine {
 }
 
 fn agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usize {
-    if !session.current {
-        return state
-            .session_summaries
-            .get(&session.generation_id)
-            .map(|summary| summary.agent_count)
-            .unwrap_or_default();
-    }
-
-    local_session_agents(session, state).count()
+    agents_for_session(session, state).count()
 }
 
 fn running_agent_count_for_session(session: &ZellijSession, state: &RuntimeState) -> usize {
-    if !session.current {
-        return state
-            .session_summaries
-            .get(&session.generation_id)
-            .map(|summary| summary.running_agent_count)
-            .unwrap_or_default();
-    }
-
-    local_session_agents(session, state)
+    agents_for_session(session, state)
         .filter(|agent| agent.state == crate::runtime::AgentState::Running)
         .count()
 }
 
-fn local_session_agents<'a>(
+fn agents_for_session<'a>(
     session: &'a ZellijSession,
     state: &'a RuntimeState,
 ) -> impl Iterator<Item = &'a crate::runtime::AgentReport> {
     state.agents.values().filter(|agent| {
         let Some(agent_session) = agent.zellij_session.as_deref() else {
-            return true;
+            return session.current;
         };
-        agent_session == session.name
-            || !state
-                .zellij_sessions
-                .values()
-                .any(|native| !native.current && native.name == agent_session)
+        if session.current {
+            agent_session == session.name
+                || !state
+                    .zellij_sessions
+                    .values()
+                    .any(|native| !native.current && native.name == agent_session)
+        } else {
+            agent_session == session.name
+        }
     })
 }
 
@@ -241,12 +259,15 @@ fn blank_rows(rows: usize) -> String {
 
 fn agent_line(session: &crate::runtime::AgentReport, state: &RuntimeState) -> AgentLine {
     let pane = session.pane_id.clone().unwrap_or_else(|| "?".into());
+    let session_id = agent_session_id(session, state);
     AgentLine {
+        id: agent_stable_id(session, &pane, &session_id),
         agent_id: session.agent_id.clone(),
         session_name: session.session_name.clone().unwrap_or_default(),
         state: state_label(&session.state),
         focused: state.focused_pane.as_deref() == Some(pane.as_str()),
         active_tab: session.tab_id == state.active_tab,
+        pane_id: pane_stable_id(&session_id, &pane),
         pane,
         cwd: basename(&session.cwd).into(),
         model: session.model.clone().unwrap_or_else(|| "?".into()),
@@ -264,6 +285,69 @@ fn agent_line(session: &crate::runtime::AgentReport, state: &RuntimeState) -> Ag
     }
 }
 
+fn current_session_id(state: &RuntimeState) -> Option<String> {
+    state
+        .zellij_sessions
+        .values()
+        .find(|session| session.current)
+        .map(|session| session.generation_id.clone())
+}
+
+fn fallback_session_id(state: &RuntimeState) -> String {
+    state
+        .zellij_session
+        .as_deref()
+        .or_else(|| {
+            state
+                .agents
+                .values()
+                .find_map(|agent| agent.zellij_session.as_deref())
+        })
+        .map(|name| format!("session:{name}"))
+        .unwrap_or_else(|| "session:?".into())
+}
+
+fn agent_session_id(agent: &crate::runtime::AgentReport, state: &RuntimeState) -> String {
+    let current_id = current_session_id(state);
+    let Some(agent_session) = agent.zellij_session.as_deref() else {
+        return current_id.unwrap_or_else(|| fallback_session_id(state));
+    };
+    if let Some(native) = state
+        .zellij_sessions
+        .values()
+        .find(|session| session.name == agent_session)
+    {
+        return native.generation_id.clone();
+    }
+    if !state
+        .zellij_sessions
+        .values()
+        .any(|native| !native.current && native.name == agent_session)
+    {
+        if let Some(current_id) = current_id {
+            return current_id;
+        }
+    }
+    format!("session:{agent_session}")
+}
+
+fn tab_stable_id(session_id: &str, tab_id: usize) -> String {
+    format!("tab:{session_id}:{tab_id}")
+}
+
+fn pane_stable_id(session_id: &str, pane: &str) -> String {
+    format!("pane:{session_id}:{pane}")
+}
+
+fn agent_stable_id(agent: &crate::runtime::AgentReport, pane: &str, session_id: &str) -> String {
+    let key = if agent.pane_id.is_some() {
+        pane
+    } else {
+        agent.agent_id.as_str()
+    };
+    format!("agent:{session_id}:{key}")
+}
+
 fn mark_single_agent_active_tabs(tabs: &mut [TabLine]) {
     for tab in tabs {
         if tab.active && tab.agents.len() == 1 && !tab.agents[0].focused {
@@ -275,7 +359,7 @@ fn mark_single_agent_active_tabs(tabs: &mut [TabLine]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{AgentReport, AgentState, SessionSummary, ZellijSession};
+    use crate::runtime::{AgentReport, AgentState, ZellijSession};
     use std::collections::{BTreeMap, VecDeque};
 
     pub(super) fn sample_model() -> RenderModel {
@@ -335,10 +419,14 @@ mod tests {
         assert_eq!(model.zellij_session, "z");
 
         assert_eq!(model.agents[0].harness, "pi");
+        assert_eq!(model.agents[0].id, "agent:session:z:1");
         assert_eq!(model.agents[0].agent_id, "s");
+        assert_eq!(model.agents[0].pane_id, "pane:session:z:1");
         assert_eq!(model.agents[0].session_name, "diagnostic-session");
         assert_eq!(model.agents[0].current_tool, "bash");
         assert_eq!(model.tabs[0].agents.len(), 1);
+        assert!(model.orphans.is_empty());
+        assert_eq!(model.tabs[0].id, "tab:session:z:7");
         assert_eq!(model.harness, "pi");
     }
 
@@ -391,15 +479,6 @@ mod tests {
                     },
                 ),
             ]),
-            session_summaries: BTreeMap::from([(
-                "beta:1".into(),
-                SessionSummary {
-                    generation_id: "beta:1".into(),
-                    agent_count: 2,
-                    running_agent_count: 1,
-                    fresh_at_millis: 0,
-                },
-            )]),
             zellij_session: Some("Alpha".into()),
             ..RuntimeState::default()
         };
@@ -407,11 +486,12 @@ mod tests {
         let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
 
         assert_eq!(model.sessions[0].name, "Alpha");
+        assert_eq!(model.sessions[0].id, "Alpha:1");
         assert_eq!(model.sessions[1].name, "aardvark");
         assert_eq!(model.sessions[2].name, "beta");
         assert_eq!(model.sessions[0].agent_count, 1);
         assert_eq!(model.sessions[1].agent_count, 0);
-        assert_eq!(model.sessions[2].agent_count, 2);
+        assert_eq!(model.sessions[2].agent_count, 1);
         assert_eq!(model.sessions[2].running_agent_count, 1);
         assert_eq!(model.sessions[0].created_at_seconds, 20);
     }
@@ -442,6 +522,7 @@ mod tests {
 
         assert_eq!(model.sessions[0].name, "new-name");
         assert_eq!(model.sessions[0].agent_count, 1);
+        assert_eq!(model.agents[0].id, "agent:10:1");
     }
 
     #[test]
@@ -478,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn agents_without_matching_tab_metadata_remain_flat_only() {
+    fn agents_without_matching_tab_metadata_render_as_orphans() {
         let runtime = RuntimeState {
             tabs: BTreeMap::from([(9, "Empty".into())]),
             agents: BTreeMap::from([(
@@ -508,6 +589,39 @@ mod tests {
         assert_eq!(model.agents.len(), 1);
         assert_eq!(model.tabs.len(), 1);
         assert!(model.tabs[0].agents.is_empty());
+        assert_eq!(model.orphans.len(), 1);
+    }
+
+    #[test]
+    fn agents_render_when_tab_metadata_has_not_arrived() {
+        let runtime = RuntimeState {
+            agents: BTreeMap::from([(
+                "s".into(),
+                AgentReport {
+                    version: 2,
+                    harness: Some("pi".into()),
+                    agent_id: "s".into(),
+                    session_name: None,
+                    cwd: "/tmp/project".into(),
+                    pane_id: Some("1".into()),
+                    tab_id: Some(7),
+                    tab_name: Some("Stale".into()),
+                    zellij_session: Some("z".into()),
+                    state: AgentState::Idle,
+                    model: None,
+                    title: None,
+                    current_tool: None,
+                    updated_at: 0,
+                },
+            )]),
+            ..RuntimeState::default()
+        };
+
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+
+        assert_eq!(model.agents.len(), 1);
+        assert!(model.tabs.is_empty());
+        assert_eq!(model.orphans.len(), 1);
     }
 
     #[test]

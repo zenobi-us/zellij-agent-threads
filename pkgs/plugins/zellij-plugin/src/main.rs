@@ -12,9 +12,10 @@ mod runtime;
 
 use config::PluginConfig;
 use render::{
-    error_frame, paint_frame, AgentRenderer, ClickAction, RenderModel, RenderedFrame, TemplateError,
+    error_frame, loading_frame, paint_frame, AgentRenderer, ClickAction, RenderModel,
+    RenderedFrame, TemplateError,
 };
-use runtime::{PollCommand, RuntimeState, AGENT_PIPE_NAME, SUMMARY_PIPE_NAME};
+use runtime::{RuntimeState, SnapshotCommand, AGENT_PIPE_NAME};
 
 const REFRESH_PIPE_NAME: &str = "agenthreads:refresh";
 const TOGGLE_PIPE_NAME: &str = "agenthreads:toggle";
@@ -32,16 +33,19 @@ struct TimerReason {
     render_refresh: bool,
     agent_expiry: bool,
     session_poll: bool,
+    snapshot_poll: bool,
     poll_timeout: bool,
     session_summary_expiry: bool,
 }
 
+#[allow(dead_code)]
 impl TimerReason {
     const fn render_refresh() -> Self {
         Self {
             render_refresh: true,
             agent_expiry: false,
             session_poll: false,
+            snapshot_poll: false,
             poll_timeout: false,
             session_summary_expiry: false,
         }
@@ -52,6 +56,7 @@ impl TimerReason {
             render_refresh: false,
             agent_expiry: true,
             session_poll: false,
+            snapshot_poll: false,
             poll_timeout: false,
             session_summary_expiry: false,
         }
@@ -62,6 +67,18 @@ impl TimerReason {
             render_refresh: false,
             agent_expiry: false,
             session_poll: true,
+            snapshot_poll: false,
+            poll_timeout: false,
+            session_summary_expiry: false,
+        }
+    }
+
+    const fn snapshot_poll() -> Self {
+        Self {
+            render_refresh: false,
+            agent_expiry: false,
+            session_poll: false,
+            snapshot_poll: true,
             poll_timeout: false,
             session_summary_expiry: false,
         }
@@ -72,6 +89,7 @@ impl TimerReason {
             render_refresh: false,
             agent_expiry: false,
             session_poll: false,
+            snapshot_poll: false,
             poll_timeout: true,
             session_summary_expiry: false,
         }
@@ -82,6 +100,7 @@ impl TimerReason {
             render_refresh: false,
             agent_expiry: false,
             session_poll: false,
+            snapshot_poll: false,
             poll_timeout: false,
             session_summary_expiry: true,
         }
@@ -91,6 +110,7 @@ impl TimerReason {
         self.render_refresh |= other.render_refresh;
         self.agent_expiry |= other.agent_expiry;
         self.session_poll |= other.session_poll;
+        self.snapshot_poll |= other.snapshot_poll;
         self.poll_timeout |= other.poll_timeout;
         self.session_summary_expiry |= other.session_summary_expiry;
     }
@@ -99,6 +119,7 @@ impl TimerReason {
         self.render_refresh
             || self.agent_expiry
             || self.session_poll
+            || self.snapshot_poll
             || self.poll_timeout
             || self.session_summary_expiry
     }
@@ -119,6 +140,7 @@ struct RefreshTimer {
     superseded: Vec<Duration>,
 }
 
+#[allow(dead_code)]
 impl RefreshTimer {
     fn schedule(
         &mut self,
@@ -223,6 +245,7 @@ struct PluginState {
     template_error: Option<TemplateError>,
     renderer_configuration: BTreeMap<String, String>,
     pending_template: Option<PendingTemplate>,
+    loading_frame_index: usize,
     last_pane_manifest: Option<PaneManifest>,
     refresh_timer: RefreshTimer,
     pending_permissions: VecDeque<PermissionRequestKind>,
@@ -306,18 +329,8 @@ impl PluginState {
             )
             .chain(
                 self.runtime
-                    .next_session_poll()
-                    .map(|delay| (delay, TimerReason::session_poll())),
-            )
-            .chain(
-                self.runtime
-                    .next_poll_timeout()
-                    .map(|delay| (delay, TimerReason::poll_timeout())),
-            )
-            .chain(
-                self.runtime
-                    .next_session_summary_expiry()
-                    .map(|delay| (delay, TimerReason::session_summary_expiry())),
+                    .next_snapshot_poll()
+                    .map(|delay| (delay, TimerReason::snapshot_poll())),
             )
         {
             match &mut next {
@@ -336,40 +349,20 @@ impl PluginState {
         }
     }
 
-    fn run_next_poll_command(&mut self) {
-        if let Some(command) = self.runtime.next_poll_command() {
-            run_session_poll(&command);
+    fn run_snapshot_command(&mut self) {
+        if let Some(command) = self.runtime.begin_snapshot_poll() {
+            run_agent_snapshot(&command);
             self.schedule_next_timer(None);
         }
     }
 
-    fn cancel_active_poll_timeout(&mut self) {
-        if let Some(delay) = self
-            .refresh_timer
-            .cancel_poll_timeout(self.runtime.lease_time())
-        {
-            schedule_timeout(delay.as_secs_f64());
-        }
+    fn request_snapshot(&mut self) {
+        self.runtime.request_snapshot_now();
+        self.run_snapshot_command();
+        self.schedule_next_timer(None);
     }
 
     fn template_unavailable_error(&self) -> TemplateError {
-        if let Some(pending_template) = &self.pending_template {
-            if self
-                .pending_permissions
-                .iter()
-                .any(|request| *request == PermissionRequestKind::Base)
-            {
-                return template_config_error(format!(
-                    "template_file is waiting for FullHdAccess permission to mount {}",
-                    pending_template.host_folder.display()
-                ));
-            }
-            return template_config_error(format!(
-                "template_file permission granted; waiting for Zellij to mount {} as /host",
-                pending_template.host_folder.display()
-            ));
-        }
-
         template_config_error(
             "template renderer unavailable; no renderer, error, or pending template",
         )
@@ -434,27 +427,13 @@ impl ZellijPlugin for PluginState {
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
         if pipe_message.name == AGENT_PIPE_NAME {
             let changed = self.runtime.handle_pipe(pipe_message);
-            self.schedule_next_timer(None);
+            self.request_snapshot();
             return changed;
-        }
-
-        if pipe_message.name == SUMMARY_PIPE_NAME {
-            if matches!(pipe_message.source, PipeSource::Cli(_)) {
-                if let Some(output) = self
-                    .runtime
-                    .session_summary_output(pipe_message.payload.as_deref())
-                {
-                    send_cli_pipe_output(SUMMARY_PIPE_NAME, &output);
-                }
-            }
-            return false;
         }
 
         match control_pipe(&pipe_message.name) {
             Some(ControlPipe::Refresh) => {
-                if let Some(plugin_id) = self.plugin_id {
-                    reload_self(plugin_id);
-                }
+                self.request_snapshot();
             }
             Some(ControlPipe::Toggle) => {
                 let is_suppressed = self.plugin_id.and_then(|plugin_id| {
@@ -478,6 +457,10 @@ impl ZellijPlugin for PluginState {
             }
         } else if let Some(error) = &self.template_error {
             error_frame(error, rows, cols)
+        } else if self.pending_template.is_some() {
+            let frame = loading_frame("loading template", self.loading_frame_index, rows, cols);
+            self.loading_frame_index = self.loading_frame_index.wrapping_add(1);
+            frame
         } else {
             error_frame(&self.template_unavailable_error(), rows, cols)
         };
@@ -531,51 +514,33 @@ impl ZellijPlugin for PluginState {
                 };
                 tab_changed || focus_changed
             }
-            Event::SessionUpdate(sessions, _) => {
-                let outcome = self.runtime.sync_zellij_sessions_with_outcome(&sessions);
-                if outcome.canceled_active_poll {
-                    self.cancel_active_poll_timeout();
-                }
-                self.run_next_poll_command();
-                outcome.changed
-            }
+            Event::SessionUpdate(sessions, _) => self.runtime.sync_zellij_sessions(&sessions),
             Event::Timer(elapsed) => {
                 let Some(expired) = self.refresh_timer.expired(elapsed) else {
                     return false;
                 };
                 self.runtime.advance_lease_clock_to(expired.fired_at);
-                if expired.reason.session_poll {
-                    self.runtime.begin_session_poll_cycle();
+                if expired.reason.snapshot_poll {
+                    self.run_snapshot_command();
                 }
                 let removed_agents = if expired.reason.agent_expiry {
                     self.runtime.expire_silent_agents() > 0
                 } else {
                     false
                 };
-                let removed_summaries = if expired.reason.session_summary_expiry {
-                    self.runtime.expire_session_summaries() > 0
-                } else {
-                    false
-                };
-                let poll_failed = if expired.reason.poll_timeout {
-                    self.runtime.poll_timed_out()
-                } else {
-                    false
-                };
-                self.run_next_poll_command();
                 self.schedule_next_timer(None);
-                expired.reason.render_refresh || removed_agents || removed_summaries || poll_failed
+                expired.reason.render_refresh || removed_agents
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {
-                let changed = self
+                let snapshot_changed = self
                     .runtime
-                    .handle_poll_result(exit_code, &stdout, &stderr, &context);
-                if changed {
-                    self.cancel_active_poll_timeout();
+                    .handle_snapshot_result(exit_code, &stdout, &stderr, &context);
+                if snapshot_changed {
+                    self.schedule_next_timer(None);
+                    return true;
                 }
-                self.run_next_poll_command();
                 self.schedule_next_timer(None);
-                changed
+                false
             }
             Event::PermissionRequestResult(status) => {
                 let request = finish_pending_permission(&mut self.pending_permissions);
@@ -599,12 +564,11 @@ impl ZellijPlugin for PluginState {
                                 }
                             }
                         }
-                        let enabled = status == PermissionStatus::Granted;
-                        self.runtime.set_session_polling_enabled(enabled);
-                        if !enabled {
-                            self.cancel_active_poll_timeout();
+                        if status == PermissionStatus::Granted {
+                            self.request_snapshot();
+                        } else {
+                            self.runtime.last_error = Some("agent snapshot unavailable".into());
                         }
-                        self.run_next_poll_command();
                     }
                 }
                 if self.pending_permissions.is_empty() {
@@ -665,37 +629,14 @@ fn schedule_timeout(seconds: f64) {
     let _ = seconds;
 }
 
-fn send_cli_pipe_output(pipe_name: &str, output: &str) {
-    #[cfg(target_arch = "wasm32")]
-    cli_pipe_output(pipe_name, output);
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = (pipe_name, output);
-}
-
-fn run_session_poll(command: &PollCommand) {
+fn run_agent_snapshot(command: &SnapshotCommand) {
     #[cfg(target_arch = "wasm32")]
     {
-        let args = [
-            "zellij",
-            "--session",
-            command.session_name.as_str(),
-            "pipe",
-            "--name",
-            SUMMARY_PIPE_NAME,
-            "--",
-            command.payload.as_str(),
-        ];
+        let args = ["agent-threads", "snapshot", "--json"];
         run_command(&args, command.context());
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = command;
-}
-
-fn reload_self(plugin_id: u32) {
-    #[cfg(target_arch = "wasm32")]
-    reload_plugin_with_id(plugin_id);
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = plugin_id;
 }
 
 fn set_self_visible(visible: bool) {
@@ -944,36 +885,22 @@ mod tests {
     }
 
     #[test]
-    fn pending_external_template_reports_waiting_step() {
+    fn pending_external_template_renders_loading_frame() {
         let pending_template = PendingTemplate {
             host_folder: PathBuf::from("/var/home/q/.config/zellij/plugins/agent-threads"),
             configuration: template_config("/main.jinja"),
         };
-        let state = PluginState {
+        let mut state = PluginState {
             pending_template: Some(pending_template),
             pending_permissions: VecDeque::from([PermissionRequestKind::Base]),
             ..PluginState::default()
         };
 
-        assert!(state
-            .template_unavailable_error()
-            .to_string()
-            .contains("waiting for FullHdAccess permission"));
+        state.render(1, 40);
 
-        let pending_template = PendingTemplate {
-            host_folder: PathBuf::from("/var/home/q/.config/zellij/plugins/agent-threads"),
-            configuration: template_config("/main.jinja"),
-        };
-        let state = PluginState {
-            pending_template: Some(pending_template),
-            pending_permissions: VecDeque::new(),
-            ..PluginState::default()
-        };
-
-        assert!(state
-            .template_unavailable_error()
-            .to_string()
-            .contains("waiting for Zellij to mount"));
+        assert!(state.frame.lines[0].contains("loading template"));
+        assert!(state.frame.refresh_after.is_some());
+        assert_eq!(state.loading_frame_index, 1);
     }
 
     #[test]

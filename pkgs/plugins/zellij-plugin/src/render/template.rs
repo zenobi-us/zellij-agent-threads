@@ -88,6 +88,28 @@ pub(crate) fn error_frame(error: &Error, rows: usize, cols: usize) -> RenderedFr
     }
 }
 
+pub(crate) fn loading_frame(
+    message: &str,
+    frame_index: usize,
+    rows: usize,
+    cols: usize,
+) -> RenderedFrame {
+    if rows == 0 || cols == 0 {
+        return Frame::default();
+    }
+
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let line = format!("{} {}", FRAMES[frame_index % FRAMES.len()], message);
+    let lines = vec![line.chars().take(cols).collect()];
+    let hitboxes = vec![std::iter::repeat_with(|| None).take(cols).collect()];
+
+    Frame {
+        lines,
+        hitboxes,
+        refresh_after: Some(std::time::Duration::from_millis(125)),
+    }
+}
+
 fn wrap_error_lines(message: &str, rows: usize, cols: usize) -> Vec<String> {
     if rows == 0 || cols == 0 {
         return Vec::new();
@@ -109,6 +131,7 @@ fn template_context(model: &RenderModel, rows: usize) -> TemplateContext {
         .with("zellij_session", model.zellij_session.clone())
         .with("harness", model.harness.clone())
         .with("tabs", Value::from_serialize(&model.tabs))
+        .with("orphans", Value::from_serialize(&model.orphans))
         .with("events", Value::from_serialize(&model.events))
         .with("has_error", model.has_error)
         .with("last_error", model.last_error.clone())
@@ -304,28 +327,53 @@ mod tests {
     fn inline_template_uses_agent_and_tab_contract() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
             "template".into(),
-            "{{ agents | length }}/{{ tabs | length }}/{{ tabs[0].agents | length }}".into(),
+            "{{ agents[0].id }} {{ agents[0].pane_id }} {{ tabs[0].id }} {{ tabs[0].agents | length }} {{ orphans | length }}".into(),
         )]))
         .unwrap();
 
         let frame = renderer
-            .render(&ModeInfo::default(), &sample_model(), 1, 30)
+            .render(&ModeInfo::default(), &sample_model(), 1, 120)
             .unwrap();
-        assert_eq!(frame.lines, ["1/1/1"]);
+        assert_eq!(
+            frame.lines,
+            ["agent:session:z:1 pane:session:z:1 tab:session:z:7 1 0"]
+        );
+    }
+
+    #[test]
+    fn default_template_renders_orphans() {
+        let runtime = RuntimeState {
+            agents: BTreeMap::from([("s".into(), agent_session("s", "1", "Orphan"))]),
+            ..RuntimeState::default()
+        };
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+        let mut renderer = AgentRenderer::from_configuration(&BTreeMap::new()).unwrap();
+        let frame = renderer
+            .render(&ModeInfo::default(), &model, 20, 80)
+            .unwrap();
+        let output = frame
+            .lines
+            .iter()
+            .map(|line| plain_text(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(output.contains("Orphans"));
+        assert!(output.contains("Orphan"));
     }
 
     #[test]
     fn inline_template_uses_sessions_contract() {
         let mut renderer = AgentRenderer::from_configuration(&BTreeMap::from([(
             "template".into(),
-            "{{ sessions[0].generation_id }} {{ sessions[0].name }} {{ sessions[0].status }} {{ sessions[0].agent_count }} {{ sessions[0].running_agent_count }} {{ sessions[0].connected_client_count }} {{ sessions[0].tab_count }} {{ sessions[0].pane_count }} {{ sessions[0].created_at_seconds }}".into(),
+            "{{ sessions[0].id }} {{ sessions[0].generation_id }} {{ sessions[0].name }} {{ sessions[0].status }} {{ sessions[0].agent_count }} {{ sessions[0].running_agent_count }} {{ sessions[0].connected_client_count }} {{ sessions[0].tab_count }} {{ sessions[0].pane_count }} {{ sessions[0].created_at_seconds }}".into(),
         )]))
         .unwrap();
 
         let frame = renderer
             .render(&ModeInfo::default(), &sample_model_with_sessions(), 1, 80)
             .unwrap();
-        assert_eq!(frame.lines, ["z:10 z current 1 1 1 2 3 10"]);
+        assert_eq!(frame.lines, ["z:10 z:10 z current 1 1 1 2 3 10"]);
     }
 
     #[test]

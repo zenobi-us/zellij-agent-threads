@@ -34,4 +34,21 @@
 
   {%- endif -%}
   {%- endfor -%}
+
+  {%- if orphans | length > 0 -%}
+    {%- call Flex(shrink=0) -%}
+    {{- " Orphans " | bg("index:8") | dim -}}
+    {%- endcall -%}
+
+    {%- for agent in orphans -%}
+      {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
+      {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
+      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}
+        {{ " " }} {{ tree_link(loop.index0, orphans | length) | dim }} {{ icon }} {{ t(agent_label, agent.focused) }}
+        {%- if agent.state == "running" and agent.current_tool %}
+          {{ "┃" | bold if agent.focused else "┃" | dim }}  {{ agent.current_tool | bold if agent.focused else agent.current_tool | dim }}
+        {%- endif -%}
+      {%- endcall -%}
+    {%- endfor -%}
+  {%- endif -%}
 {%- endif -%}

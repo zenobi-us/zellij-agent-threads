@@ -71,13 +71,14 @@ tasks:
     deps:
       - "~:build"
       - "pi-extension:install"
+      - "agent-threads:install"
     inputs:
       - "target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
     script: |
       set -euo pipefail
       plugin_path="$HOME/.config/zellij/plugins/agent-threads.wasm"
       mkdir -p "$(dirname "$plugin_path")"
-      ls -al ./target/wasm32-wasip1/release
+      rm -f "$plugin_path"
       cp "./target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm" "$plugin_path"
 
       zellij action start-or-reload-plugin "file:$plugin_path"
