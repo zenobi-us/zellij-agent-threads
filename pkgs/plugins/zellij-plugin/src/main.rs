@@ -514,7 +514,13 @@ impl ZellijPlugin for PluginState {
                 };
                 tab_changed || focus_changed
             }
-            Event::SessionUpdate(sessions, _) => self.runtime.sync_zellij_sessions(&sessions),
+            Event::SessionUpdate(sessions, _) => {
+                let changed = self.runtime.sync_zellij_sessions(&sessions);
+                if changed {
+                    self.request_snapshot();
+                }
+                changed
+            }
             Event::Timer(elapsed) => {
                 let Some(expired) = self.refresh_timer.expired(elapsed) else {
                     return false;
@@ -871,6 +877,22 @@ mod tests {
 
         assert_eq!(plugin_is_suppressed(&manifest, 42), Some(true));
         assert_eq!(plugin_is_suppressed(&manifest, 7), None);
+    }
+
+    #[test]
+    fn session_update_requests_snapshot_immediately() {
+        let mut state = PluginState::default();
+
+        assert!(state.update(Event::SessionUpdate(
+            vec![SessionInfo {
+                name: "work".into(),
+                is_current_session: true,
+                ..Default::default()
+            }],
+            vec![],
+        )));
+
+        assert!(state.runtime.active_snapshot.is_some());
     }
 
     #[test]
