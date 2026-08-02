@@ -38,8 +38,8 @@ plugins {
 
 | Name | Payload | Behaviour |
 |---|---|---|
-| `agenthreads:agent` | Agent Report v2 JSON | Update rendered agent state and renew its ten-second lease |
-| `agenthreads:refresh` | None | Reload the plugin instance |
+| `agenthreads:agent` | Agent Report v2 JSON | Legacy wake/back-compat path; snapshot store remains source of truth |
+| `agenthreads:refresh` | None | Poll `agent-threads snapshot --json` now |
 | `agenthreads:toggle` | None | Hide or show the plugin pane |
 
 Example keybindings:
@@ -144,23 +144,34 @@ key. Each accepted report renews a ten-second lease. Silent agents disappear whe
 expires. Reports with another `version` are rejected explicitly.
 
 Template model v2 exposes `agents`, native `sessions`, all current-session `tabs`, and
-`tabs[].agents`. Agents without matching tab metadata stay in the flat `agents` list. The
-built-in template renders only tabs that have agents.
+`tabs[].agents`. Each session, tab, agent, and agent pane has a stable string `id`. The plugin owns
+session IDs because Zellij reports session age, not a stable native session key. Agents without
+matching tab metadata stay in the flat `agents` list. The built-in template renders only tabs that
+have agents.
 
 Each `sessions[]` item comes from native Zellij `SessionUpdate` data. Agent Reports do not rebuild
 the session topology.
 
 | Field | Meaning |
 |---|---|
-| `generation_id` | Stable identity for one native session generation. A removed and recreated session gets a new value, even if it reuses the same name. |
+| `id` | Runtime-owned stable identity for one native session generation. |
+| `generation_id` | Same value as `id`, kept for template compatibility. |
 | `name` | Native Zellij session name. |
 | `status` | `current` for the current session. Other active sessions use `active`. |
 | `agent_count` | Number of known Agents for this session. Remote sessions can be zero. |
 | `connected_client_count` | Number of connected Zellij clients. Web clients are included. |
 | `tab_count` | Number of native tabs in the session. |
 | `pane_count` | Number of native panes in the session. |
-| `created_at_seconds` | Native session creation time, in seconds. |
+| `created_at_seconds` | Native Zellij session-age value, in seconds. |
 | `current` | `true` when this is the current Zellij session. |
+
+Each `tabs[]` item exposes `id`, `tab_id`, `tab_name`, `active`, and `agents`. `tab_id` stays the
+argument for `actions.switch_tab(tab.tab_id)`.
+
+Each `agents[]` item exposes `id`, `agent_id`, `pane_id`, `pane`, `session_name`, `state`, `cwd`,
+`model`, `title`, `zellij_session`, `harness`, `current_tool`, `focused`, and `active_tab`.
+`pane` stays the argument for `actions.focus_pane(agent.pane)`. `pane_id` is the stable pane
+identity.
 
 `sessions` sorts the current session first. Other sessions sort by case-insensitive name.
 Use `actions.switch_to_session(session.name)` to switch to another active session. The built-in

@@ -114,16 +114,17 @@ Template model exposes `zellij_session`, `agents`, `sessions`, `tabs`, `events`,
 `state`, `pane`, `cwd`, `model`, `title`, `harness`, `current_tool`, and `focused`.
 `tabs` contains all current Zellij session tabs. `tab.agents` contains matching agents only.
 
-Each `sessions[]` item comes from native Zellij session data. It exposes `generation_id`,
-`name`, `status`, `agent_count`, `running_agent_count`, `connected_client_count`,
-`tab_count`, `pane_count`, `created_at_seconds`, and `current`.
+Each `sessions[]` item comes from native Zellij session data. It exposes `id`, `generation_id`,
+`name`, `status`, `agent_count`, `running_agent_count`, `connected_client_count`, `tab_count`,
+`pane_count`, `created_at_seconds`, and `current`. The plugin owns `id` because Zellij reports
+session age, not a stable native session key.
 
-Remote Agent counts use leased in-memory Session summaries. Each sidebar polls other active
-Zellij sessions every ten seconds with `zellij --session <name> pipe --name agenthreads:summary`.
-The poll does not specify a plugin destination, so it cannot launch a missing sidebar.
-Valid replies renew a thirty-second lease. Missing, expired, or unavailable summaries show zero
-remote Agent counts while polling continues. The plugin does not store summaries on disk and does
-not copy full remote Agent records.
+Agent presence comes from the `agent-threads` CLI singleton store. Pi writes reports with
+`agent-threads upsert --json '<AgentReportV2>'` and deletes closed sessions with
+`agent-threads delete --agent-id '<id>'`. The CLI stores rows in SQLite at
+`$XDG_RUNTIME_DIR/zellij-agent-threads/state.sqlite`. The plugin polls
+`agent-threads snapshot --json` and replaces its in-memory agent list with that snapshot.
+Zellij pipes are wake/control signals only; `agenthreads:summary` remote polling is deprecated.
 
 The old `groups`, `group.sessions`, and `current_task` template names are removed.
 
@@ -147,9 +148,9 @@ formatting. `format_time` formats Unix timestamps.
 ## Protocol v2
 
 Pi publishes version-two Agent Reports only. The payload uses `agent_id` as the stable agent key
-and `session_name` as diagnostic metadata. If a report has a `pane_id`, the plugin uses that pane
-as the stable row identity. Each accepted report renews a ten-second lease for that agent.
-Reports with any other `version` are rejected and recorded as pipe errors.
+and `session_name` as diagnostic metadata. If a report has a `pane_id`, the store key is
+`zellij_session:pane_id`; otherwise it is `agent_id`. Each upsert renews a ten-second SQLite lease.
+Reports with any other `version` are rejected by the store or recorded as pipe errors.
 
 Version one is removed. The old `session` field and `current_task` field are not accepted.
 External publishers must send `current_tool` instead.
