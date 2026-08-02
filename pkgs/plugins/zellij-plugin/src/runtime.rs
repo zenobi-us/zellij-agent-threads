@@ -724,11 +724,25 @@ impl RuntimeState {
     /// Zellij sessions.
     fn apply_agent_update(&mut self, session: AgentReport) {
         let key = session.cache_key();
+        self.remove_superseded_agent_keys(&key, &session.agent_id);
         if session.state == AgentState::Shutdown {
             self.agents.remove(&key);
             self.agent_leases.remove(&key);
         } else {
             self.agents.insert(key, session);
+        }
+    }
+
+    fn remove_superseded_agent_keys(&mut self, key: &str, agent_id: &str) {
+        let superseded = self
+            .agents
+            .iter()
+            .filter(|(old_key, agent)| *old_key != key && agent.agent_id == agent_id)
+            .map(|(old_key, _)| old_key.clone())
+            .collect::<Vec<_>>();
+        for old_key in superseded {
+            self.agents.remove(&old_key);
+            self.agent_leases.remove(&old_key);
         }
     }
 
@@ -877,9 +891,11 @@ pub(crate) enum AgentState {
 
 impl AgentReport {
     fn cache_key(&self) -> String {
-        self.pane_id
-            .clone()
-            .unwrap_or_else(|| self.agent_id.clone())
+        match (self.zellij_session.as_deref(), self.pane_id.as_deref()) {
+            (Some(session), Some(pane)) => format!("{session}:{pane}"),
+            (_, Some(pane)) => pane.to_string(),
+            _ => self.agent_id.clone(),
+        }
     }
     /// Compares only fields used by the default render model/template.
     fn same_render_fields(&self, other: &Self) -> bool {
@@ -1223,7 +1239,7 @@ mod tests {
         ));
 
         assert_eq!(runtime.agents.len(), 1);
-        assert!(runtime.agents.contains_key("2"));
+        assert!(runtime.agents.contains_key("work:2"));
     }
 
     #[test]
@@ -1248,7 +1264,7 @@ mod tests {
             &command.context(),
         ));
 
-        assert!(runtime.agents.contains_key("2"));
+        assert!(runtime.agents.contains_key("old:2"));
     }
 
     #[test]
@@ -1494,6 +1510,22 @@ mod tests {
     }
 
     #[test]
+    fn same_pane_in_different_zellij_sessions_keeps_separate_agents() {
+        let mut runtime = RuntimeState::default();
+        let mut first = session("first", Some("1"));
+        first.zellij_session = Some("alpha".into());
+        let mut second = session("second", Some("1"));
+        second.zellij_session = Some("beta".into());
+
+        assert!(runtime.handle_pipe(pipe_message(first)));
+        assert!(runtime.handle_pipe(pipe_message(second)));
+
+        assert_eq!(runtime.agents.len(), 2);
+        assert_eq!(runtime.agents["alpha:1"].agent_id, "first");
+        assert_eq!(runtime.agents["beta:1"].agent_id, "second");
+    }
+
+    #[test]
     fn zellij_session_change_requests_render() {
         let mut runtime = RuntimeState::default();
         let first = session("a", Some("1"));
@@ -1504,7 +1536,7 @@ mod tests {
         assert!(runtime.handle_pipe(pipe_message(hidden_change)));
         assert_eq!(runtime.pipe_count, 2);
         assert_eq!(
-            runtime.agents["1"].zellij_session.as_deref(),
+            runtime.agents["renamed:1"].zellij_session.as_deref(),
             Some("renamed")
         );
     }

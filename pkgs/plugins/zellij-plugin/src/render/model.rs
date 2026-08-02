@@ -74,6 +74,7 @@ impl RenderModel {
         let agents: Vec<_> = state
             .agents
             .values()
+            .filter(|agent| agent_belongs_to_current_session(agent, state))
             .map(|session| agent_line(session, state))
             .collect();
         let zellij_session = state
@@ -118,6 +119,7 @@ impl RenderModel {
                     .agents
                     .values()
                     .filter(|session| session.tab_id == Some(*tab_id))
+                    .filter(|agent| agent_belongs_to_current_session(agent, state))
                     .map(|session| agent_line(session, state))
                     .collect(),
             })
@@ -130,6 +132,7 @@ impl RenderModel {
         let orphans = state
             .agents
             .values()
+            .filter(|agent| agent_belongs_to_current_session(agent, state))
             .filter(|agent| agent.tab_id.is_none_or(|tab_id| !tab_ids.contains(&tab_id)))
             .map(|agent| agent_line(agent, state))
             .collect::<Vec<_>>();
@@ -307,6 +310,38 @@ fn fallback_session_id(state: &RuntimeState) -> String {
         .unwrap_or_else(|| "session:?".into())
 }
 
+fn agent_belongs_to_current_session(
+    agent: &crate::runtime::AgentReport,
+    state: &RuntimeState,
+) -> bool {
+    let Some(current_name) = current_session_name(state) else {
+        return true;
+    };
+    let Some(agent_session) = agent.zellij_session.as_deref() else {
+        return false;
+    };
+    if agent_session == current_name {
+        return true;
+    }
+    state
+        .zellij_sessions
+        .values()
+        .any(|session| session.current)
+        && !state
+            .zellij_sessions
+            .values()
+            .any(|session| !session.current && session.name == agent_session)
+}
+
+fn current_session_name(state: &RuntimeState) -> Option<&str> {
+    state
+        .zellij_sessions
+        .values()
+        .find(|session| session.current)
+        .map(|session| session.name.as_str())
+        .or(state.zellij_session.as_deref())
+}
+
 fn agent_session_id(agent: &crate::runtime::AgentReport, state: &RuntimeState) -> String {
     let current_id = current_session_id(state);
     let Some(agent_session) = agent.zellij_session.as_deref() else {
@@ -384,6 +419,18 @@ mod tests {
             ..RuntimeState::default()
         };
         RenderModel::from_runtime(&runtime, &RenderConfig::default())
+    }
+
+    fn zellij_session(name: &str) -> ZellijSession {
+        ZellijSession {
+            generation_id: format!("{name}:1"),
+            name: name.into(),
+            connected_client_count: 1,
+            tab_count: 1,
+            pane_count: 1,
+            created_at_seconds: 1,
+            current: false,
+        }
     }
 
     fn agent_report(agent_id: &str, pane: &str, title: &str) -> AgentReport {
@@ -556,6 +603,51 @@ mod tests {
 
         assert!(model.tabs[0].active);
         assert!(model.tabs[0].agents[0].focused);
+    }
+
+    #[test]
+    fn remote_session_agents_do_not_render_under_current_tab() {
+        let mut current_agent = agent_report("local", "1", "Current");
+        current_agent.zellij_session = Some("alpha".into());
+        let mut remote_agent = agent_report("remote", "2", "Remote");
+        remote_agent.zellij_session = Some("beta".into());
+        let runtime = RuntimeState {
+            active_tab: Some(7),
+            tabs: BTreeMap::from([(7, "Agents".into())]),
+            agents: BTreeMap::from([
+                ("local".into(), current_agent),
+                ("remote".into(), remote_agent),
+            ]),
+            zellij_session: Some("alpha".into()),
+            zellij_sessions: BTreeMap::from([
+                (
+                    "alpha:1".into(),
+                    ZellijSession {
+                        generation_id: "alpha:1".into(),
+                        name: "alpha".into(),
+                        current: true,
+                        ..zellij_session("alpha")
+                    },
+                ),
+                (
+                    "beta:1".into(),
+                    ZellijSession {
+                        generation_id: "beta:1".into(),
+                        name: "beta".into(),
+                        current: false,
+                        ..zellij_session("beta")
+                    },
+                ),
+            ]),
+            ..RuntimeState::default()
+        };
+
+        let model = RenderModel::from_runtime(&runtime, &RenderConfig::default());
+
+        assert_eq!(model.agents.len(), 1);
+        assert_eq!(model.tabs[0].agents.len(), 1);
+        assert_eq!(model.tabs[0].agents[0].agent_id, "local");
+        assert!(model.orphans.is_empty());
     }
 
     #[test]
