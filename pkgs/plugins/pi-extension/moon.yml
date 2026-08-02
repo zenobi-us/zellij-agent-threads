@@ -31,8 +31,10 @@ tasks:
   install:
     script: |
       set -euo pipefail
-      mkdir -p "$HOME/.pi/agent/extensions"
-      ln -sfn "$PWD/" "$HOME/.pi/agent/extensions/zellij-agent"
+      dest="$HOME/.pi/agent/extensions/pi-agenthread"
+      rm -rf "$dest"
+      mkdir -p "$dest"
+      tar --exclude node_modules --exclude .moon -C "$PWD" -cf - . | tar -C "$dest" -xf -
     options:
       cache: false
       runInCI: false

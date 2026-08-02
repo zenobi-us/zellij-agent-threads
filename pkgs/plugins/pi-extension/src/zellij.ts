@@ -3,12 +3,13 @@ import { spawn } from "node:child_process";
 import type { StatusWidget, StatusValues } from "./status.js";
 import type { LogService } from "./log.js";
 
-export const PIPE_NAME = "agenthreads:agent";
+export const PIPE_NAME = "agenthreads:refresh";
+export const STORE_COMMAND = "agent-threads";
 export const DEFAULT_PLUGIN_ALIAS = "agent-threads";
 export const REFRESH_MS = 2_000;
 export const COMMAND_TIMEOUT_MS = 3_000;
 
-export function pipeArgs(payload: string): string[] {
+export function pipeArgs(payload = "refresh"): string[] {
   // Do not pass --plugin here. Zellij treats a targeted pipe as "load if not matched".
   // Layout plugin configuration differs from a plain alias, so --plugin creates a hidden float.
   return ["pipe", "--name", PIPE_NAME, "--", payload];
@@ -74,8 +75,8 @@ export class ZellijPublisher {
 
 
   /**
-   * Sends the current Pi Agent Report to the Zellij plugin. Status updates
-   * bracket the pipe write so users can see whether transport is stuck or failed.
+   * Writes the current Pi Agent Report to the singleton store. The Zellij pipe is
+   * only a best-effort wake signal; SQLite is the source of truth.
    */
   async publish(ctx: ExtensionContext, nextState = this.state.state, updateStatus = true): Promise<void> {
     this.state.state = nextState;
@@ -114,10 +115,11 @@ export class ZellijPublisher {
       });
 
       await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${process.env.ZELLIJ_SESSION_NAME ?? "?"} pane=${process.env.ZELLIJ_PANE_ID ?? "?"} state=${state.state} plugin=${this.pluginAlias} bytes=${payload.length}`);
-      await this.pipeToPlugin(payload);
+      await this.writeToStore(payload, agentId, state.state);
+      await this.wakePlugin();
       this.lastError = undefined;
       if (updateStatus) this.statusWidget.update(ctx, "󰄬");
-      await this.log.trace(`pipe ok state=${state.state}`);
+      await this.log.trace(`store ok state=${state.state}`);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       if (updateStatus) this.statusWidget.update(ctx, "");
@@ -191,9 +193,27 @@ export class ZellijPublisher {
   }
 
   /**
-   * Uses `zellij pipe` instead of direct plugin IPC because it is the stable,
-   * user-facing boundary Zellij exposes to external processes.
+   * Writes presence to the shared CLI/SQLite store. Shutdown deletes the row
+   * because closed agents should disappear immediately.
    */
+  writeToStore(payload: string, agentId: string, state: AgentState): Promise<void> {
+    const args = state === "shutdown"
+      ? ["delete", "--agent-id", agentId]
+      : ["upsert", "--json", payload];
+    return runCommand(STORE_COMMAND, args);
+  }
+
+  /**
+   * Uses `zellij pipe` only to wake already-running plugin instances.
+   */
+  async wakePlugin(): Promise<void> {
+    try {
+      await this.pipeToPlugin("refresh");
+    } catch (error) {
+      await this.log.trace(`wake pipe error=${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   pipeToPlugin(payload: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const child = spawn("zellij", pipeArgs(payload), {
@@ -230,4 +250,31 @@ export function parsePaneTabInfo(stdout: string, paneId: string | undefined): Pa
   } catch {
     return undefined;
   }
+}
+
+function runCommand(command: string, args: string[]): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    let settled = false;
+    const done = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      done(new Error(`${command} timed out after ${COMMAND_TIMEOUT_MS}ms`));
+    }, COMMAND_TIMEOUT_MS);
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", done);
+    child.on("exit", (code, signal) => {
+      if (code === 0) done();
+      else done(new Error(`${command} failed code=${code} signal=${signal} ${stderr.trim()}`.trim()));
+    });
+  });
 }

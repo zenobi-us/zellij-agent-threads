@@ -4,11 +4,11 @@ import type { LogService } from "./log.js";
 import type { StatusWidget } from "./status.js";
 import { parsePaneTabInfo, pipeArgs, ZellijPublisher } from "./zellij.js";
 
-test("publisher broadcasts without launching a plugin", () => {
+test("publisher wakes without launching a plugin", () => {
   expect(pipeArgs("payload")).toEqual([
     "pipe",
     "--name",
-    "agenthreads:agent",
+    "agenthreads:refresh",
     "--",
     "payload",
   ]);
@@ -39,7 +39,8 @@ test("publisher serializes publish snapshots", async () => {
   publisher.paneTabInfo = async () => new Promise((resolve) => {
     gates.push(() => resolve(undefined));
   });
-  publisher.pipeToPlugin = async (value) => { payloads.push(value); };
+  publisher.writeToStore = async (value) => { payloads.push(value); };
+  publisher.wakePlugin = async () => {};
   const ctx = {
     cwd: "/tmp/project",
     sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
@@ -60,6 +61,35 @@ test("publisher serializes publish snapshots", async () => {
   expect(payloads.map((payload) => JSON.parse(payload).state)).toEqual(["running", "idle"]);
 });
 
+test("publisher deletes store row on shutdown", async () => {
+  let command: { payload: string; agentId: string; state: string } | undefined;
+  const previousPaneId = process.env.ZELLIJ_PANE_ID;
+  const previousSession = process.env.ZELLIJ_SESSION_NAME;
+  try {
+    process.env.ZELLIJ_PANE_ID = "42";
+    process.env.ZELLIJ_SESSION_NAME = "work";
+    const publisher = new ZellijPublisher(
+      { update() {} } as unknown as StatusWidget,
+      { trace: async () => {} } as unknown as LogService,
+    );
+    publisher.paneTabInfo = async () => undefined;
+    publisher.writeToStore = async (payload, agentId, state) => { command = { payload, agentId, state }; };
+    publisher.wakePlugin = async () => {};
+
+    await publisher.publish({
+      cwd: "/tmp/project",
+      sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
+    } as ExtensionContext, "shutdown");
+
+    expect(command).toMatchObject({ agentId: "work:42", state: "shutdown" });
+  } finally {
+    if (previousPaneId === undefined) delete process.env.ZELLIJ_PANE_ID;
+    else process.env.ZELLIJ_PANE_ID = previousPaneId;
+    if (previousSession === undefined) delete process.env.ZELLIJ_SESSION_NAME;
+    else process.env.ZELLIJ_SESSION_NAME = previousSession;
+  }
+});
+
 test("publisher sends active tools using the current_tool protocol field", async () => {
   let payload = "";
   const previousPaneId = process.env.ZELLIJ_PANE_ID;
@@ -72,7 +102,8 @@ test("publisher sends active tools using the current_tool protocol field", async
       { trace: async () => {} } as unknown as LogService,
     );
     publisher.paneTabInfo = async () => undefined;
-    publisher.pipeToPlugin = async (value) => { payload = value; };
+    publisher.writeToStore = async (value) => { payload = value; };
+    publisher.wakePlugin = async () => {};
     publisher.update({ currentTool: "bash" });
 
     await publisher.publish({
