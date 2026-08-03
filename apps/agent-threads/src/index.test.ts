@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { cliAssetName, releaseAssetUrl } from "./installer.js";
+import { cliAssetName, releaseAssetUrl, resolveChannelTag } from "./installer.js";
 import { runAgentThreads } from "./index.js";
 import type { AgentReportV2 } from "./store.js";
 
@@ -256,6 +256,27 @@ test("CLI asset names match release platform assets", () => {
   expect(cliAssetName("linux", "arm64")).toBe("agent-threads-linux-arm64");
   expect(cliAssetName("darwin", "arm64")).toBe("agent-threads-darwin-arm64");
   expect(cliAssetName("win32", "x64")).toBe("agent-threads-windows-x64.exe");
+});
+
+test("stable channel selects the newest non-prerelease CLI release", async () => {
+  const fetch = async () =>
+    Response.json([
+      { tag_name: "agent-threads-v2.0.0-beta.1", prerelease: true },
+      { tag_name: "agent-threads-v1.9.0", prerelease: false },
+      { tag_name: "other-v9.9.9", prerelease: false },
+    ]);
+
+  await expect(resolveChannelTag("stable", {}, fetch)).resolves.toBe("agent-threads-v1.9.0");
+});
+
+test("prerelease channel selects the newest prerelease CLI release", async () => {
+  const fetch = async () =>
+    Response.json([
+      { tag_name: "agent-threads-v2.0.0-beta.1", prerelease: true },
+      { tag_name: "agent-threads-v1.9.0", prerelease: false },
+    ]);
+
+  await expect(resolveChannelTag("prerelease", {}, fetch)).resolves.toBe("agent-threads-v2.0.0-beta.1");
 });
 
 test("release asset resolver selects an asset from the requested release", async () => {

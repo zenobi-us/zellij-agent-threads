@@ -312,11 +312,15 @@ function normalizeChannel(channel: string): "stable" | "prerelease" {
   throw new Error(`unsupported channel: ${channel}`);
 }
 
-async function resolveChannelTag(channel: "stable" | "prerelease", env: NodeJS.ProcessEnv): Promise<string> {
+export async function resolveChannelTag(
+  channel: "stable" | "prerelease",
+  env: NodeJS.ProcessEnv,
+  fetchImpl: Fetch = fetch,
+): Promise<string> {
   if (env.AGENT_THREADS_RELEASE_TAG) return env.AGENT_THREADS_RELEASE_TAG;
   if (env.AGENT_THREADS_RELEASE_DIR) return `agent-threads-v${cliVersion(env)}`;
 
-  const response = await fetch(`https://api.github.com/repos/${REPO}/releases`, { headers: { accept: "application/vnd.github+json" } });
+  const response = await fetchImpl(`https://api.github.com/repos/${REPO}/releases`, { headers: { accept: "application/vnd.github+json" } });
   if (!response.ok) throw new Error(`failed to resolve ${channel} release: ${response.status}`);
   const body = await response.json();
   const release = body.find((item: { prerelease?: boolean; tag_name?: string }) => {
