@@ -79,6 +79,22 @@ test("install replaces an existing Zellij plugin file", () => {
   expect(readFileSync(pluginPath, "utf8")).toBe("wasm");
 });
 
+test("non-interactive install prints the Zellij snippet without editing config", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const configPath = join(config, "zellij", "config.kdl");
+  const oldConfig = "plugins {\n    compact-bar location=\"zellij:compact-bar\"\n}\n";
+  mkdirSync(join(config, "zellij"), { recursive: true });
+  writeFileSync(configPath, oldConfig);
+
+  const result = runCli(["install", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(configPath, "utf8")).toBe(oldConfig);
+  expect(result.stdout).toContain("Add this Zellij plugin alias");
+  expect(result.stdout).toContain(`agent-threads location=\"file:${join(config, "zellij", "plugins", "agent-threads.wasm")}\"`);
+  expect(result.stdout).not.toContain("Edit Zellij config");
+});
+
 test("install skips Pi extension when Pi is not detected", () => {
   const { home, config, release } = fixture({ pi: false });
 
