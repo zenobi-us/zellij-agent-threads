@@ -1,6 +1,6 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { Document, Node, format } from "@bgotink/kdl";
@@ -352,5 +352,15 @@ function integrationContract(name: string): string {
 }
 
 function commandExists(command: string, env: NodeJS.ProcessEnv): boolean {
-  return spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore", env }).status === 0;
+  return (env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .some((dir) => {
+      try {
+        accessSync(join(dir, command), constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
 }

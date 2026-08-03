@@ -54,6 +54,19 @@ test("install copies same-version plugin and detected Pi extension", () => {
   expect(result.stdout).toContain("Add this Zellij plugin alias");
 });
 
+test("install detects Pi from the pi command on PATH", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const bin = join(home, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "pi"), "#!/usr/bin/env sh\nexit 0\n");
+  chmodSync(join(bin, "pi"), 0o755);
+
+  const result = runCli(["install", "--no-reload"], home, config, release, "0.0.1", bin);
+
+  expect(result.status).toBe(0);
+  expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
+});
+
 test("install replaces an existing Zellij plugin file", () => {
   const { home, config, release } = fixture({ pi: false });
   const pluginPath = join(config, "zellij", "plugins", "agent-threads.wasm");
