@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { Document, Node, format } from "@bgotink/kdl";
@@ -8,9 +8,16 @@ import { parseCompat } from "@bgotink/kdl/v1-compat";
 
 const REPO = "zenobi-us/zellij-agent-threads";
 const CLI_NAME = "agent-threads";
-const PLUGIN_ASSET = "zellij-plugin-agent-threads.wasm";
+const PLUGIN_ASSET = "agent-threads.wasm";
 const PI_ASSET = "pi-agenthread.tar.gz";
 const DOCS_URL = "https://github.com/zenobi-us/zellij-agent-threads/blob/main/docs/harness-integration.md";
+
+type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+type GithubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
 
 export type InstallOptions = {
   harness?: string;
@@ -56,8 +63,7 @@ export async function install(options: InstallOptions = {}): Promise<number> {
   console.log(`- harnesses: ${options.harness ?? "all supported"}`);
 
   const pluginAsset = await getReleaseAsset(PLUGIN_ASSET, tag, env);
-  mkdirSync(dirname(zellijPluginPath(env)), { recursive: true });
-  copyFileSync(pluginAsset, zellijPluginPath(env));
+  installFile(pluginAsset, zellijPluginPath(env));
   completed.push(`installed Zellij plugin to ${zellijPluginPath(env)}`);
 
   const wanted = options.harness ? [options.harness] : HARNESSES.map((harness) => harness.name);
@@ -75,9 +81,7 @@ export async function install(options: InstallOptions = {}): Promise<number> {
     }
     const asset = await getReleaseAsset(harness.assetName, tag, env);
     const dir = installDir(harness, env);
-    rmSync(dir, { recursive: true, force: true });
-    mkdirSync(dir, { recursive: true });
-    extractTarGz(asset, dir);
+    installTarGz(asset, dir);
     completed.push(`installed ${harness.name} extension to ${dir}`);
   }
 
@@ -101,16 +105,15 @@ export async function selfUpdate(options: SelfUpdateOptions = {}): Promise<numbe
   console.log(`- release: ${tag}`);
   console.log(`- CLI: ${dest}`);
 
-  mkdirSync(dirname(dest), { recursive: true });
-  copyFileSync(asset, dest);
-  chmodExecutable(dest);
+  installFile(asset, dest, 0o755);
   printSummary([`installed CLI to ${dest}`], [], []);
   return 0;
 }
 
 export function cliAssetName(platform: NodeJS.Platform, arch: string): string {
   const extension = platform === "win32" ? ".exe" : "";
-  return `${CLI_NAME}-${platform}-${arch}${extension}`;
+  const releasePlatform = platform === "win32" ? "windows" : platform;
+  return `${CLI_NAME}-${releasePlatform}-${arch}${extension}`;
 }
 
 function cliVersion(env: NodeJS.ProcessEnv): string {
@@ -126,18 +129,75 @@ function cliVersion(env: NodeJS.ProcessEnv): string {
 async function getReleaseAsset(assetName: string, tag: string, env: NodeJS.ProcessEnv): Promise<string> {
   const releaseDir = env.AGENT_THREADS_RELEASE_DIR;
   if (releaseDir) {
+    if (!existsSync(releaseDir)) throw new Error(`missing release ${tag}: ${releaseDir}`);
     const path = join(releaseDir, assetName);
-    if (!existsSync(path)) throw new Error(`missing release asset: ${path}`);
+    if (!existsSync(path)) throw new Error(`missing release asset ${assetName} in ${tag}: ${path}`);
     return path;
   }
 
-  const url = `https://github.com/${REPO}/releases/download/${tag}/${assetName}`;
+  const url = await releaseAssetUrl(assetName, tag, fetch);
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`failed to download ${url}: ${response.status}`);
+  if (!response.ok) throw new Error(`failed to download release asset ${assetName} from ${tag}: ${response.status}`);
   const dir = mkdtempSync(join(tmpdir(), "agent-threads-release-"));
+  const tempPath = join(dir, `${assetName}.tmp`);
   const path = join(dir, assetName);
-  writeFileSync(path, Buffer.from(await response.arrayBuffer()));
+  writeFileSync(tempPath, Buffer.from(await response.arrayBuffer()));
+  renameSync(tempPath, path);
   return path;
+}
+
+export async function releaseAssetUrl(assetName: string, tag: string, fetchImpl: Fetch = fetch): Promise<string> {
+  const response = await fetchImpl(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, {
+    headers: { accept: "application/vnd.github+json" },
+  });
+  if (response.status === 404) throw new Error(`missing release ${tag} for ${REPO}`);
+  if (!response.ok) throw new Error(`failed to resolve release ${tag}: ${response.status}`);
+
+  const body = (await response.json()) as { assets?: GithubReleaseAsset[] };
+  const asset = body.assets?.find((item) => item.name === assetName);
+  if (!asset) throw new Error(`missing release asset ${assetName} in ${tag}`);
+  if (!asset.browser_download_url) throw new Error(`release asset ${assetName} in ${tag} has no download URL`);
+  return asset.browser_download_url;
+}
+
+function installFile(source: string, dest: string, mode?: number): void {
+  mkdirSync(dirname(dest), { recursive: true });
+  const dir = mkdtempSync(join(dirname(dest), `.${basename(dest)}-`));
+  const temp = join(dir, basename(dest));
+  try {
+    copyFileSync(source, temp);
+    if (mode !== undefined) chmodSync(temp, mode);
+    renameSync(temp, dest);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function installTarGz(archive: string, dest: string): void {
+  mkdirSync(dirname(dest), { recursive: true });
+  const temp = mkdtempSync(join(dirname(dest), `.${basename(dest)}-`));
+  try {
+    extractTarGz(archive, temp);
+    replacePath(temp, dest);
+  } catch (error) {
+    rmSync(temp, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function replacePath(source: string, dest: string): void {
+  const backup = existsSync(dest) ? mkdtempSync(join(dirname(dest), `.${basename(dest)}-old-`)) : undefined;
+  if (backup) {
+    rmSync(backup, { recursive: true, force: true });
+    renameSync(dest, backup);
+  }
+  try {
+    renameSync(source, dest);
+  } catch (error) {
+    if (backup && !existsSync(dest)) renameSync(backup, dest);
+    throw error;
+  }
+  if (backup) rmSync(backup, { recursive: true, force: true });
 }
 
 function extractTarGz(archive: string, dest: string): void {
@@ -289,9 +349,4 @@ function integrationContract(name: string): string {
 
 function commandExists(command: string, env: NodeJS.ProcessEnv): boolean {
   return spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore", env }).status === 0;
-}
-
-function chmodExecutable(path: string): void {
-  const result = spawnSync("chmod", ["755", path], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`failed to chmod ${path}: ${result.stderr}`);
 }

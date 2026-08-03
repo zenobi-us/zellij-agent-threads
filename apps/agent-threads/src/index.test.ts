@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { cliAssetName } from "./installer.js";
+import { cliAssetName, releaseAssetUrl } from "./installer.js";
 import { runAgentThreads } from "./index.js";
 import type { AgentReportV2 } from "./store.js";
 
@@ -167,6 +167,61 @@ test("self-update defaults to the stable channel", () => {
   expect(readFileSync(join(home, ".local", "bin", "agent-threads"), "utf8")).toBe("stable-binary");
 });
 
+test("CLI asset names match release platform assets", () => {
+  expect(cliAssetName("linux", "x64")).toBe("agent-threads-linux-x64");
+  expect(cliAssetName("linux", "arm64")).toBe("agent-threads-linux-arm64");
+  expect(cliAssetName("darwin", "arm64")).toBe("agent-threads-darwin-arm64");
+  expect(cliAssetName("win32", "x64")).toBe("agent-threads-windows-x64.exe");
+});
+
+test("release asset resolver selects an asset from the requested release", async () => {
+  const fetch = async () =>
+    Response.json({
+      assets: [
+        { name: "agent-threads-linux-x64", browser_download_url: "https://example.invalid/linux" },
+        { name: "agent-threads.wasm", browser_download_url: "https://example.invalid/wasm" },
+      ],
+    });
+
+  await expect(releaseAssetUrl("agent-threads.wasm", "agent-threads-v9.8.7", fetch)).resolves.toBe("https://example.invalid/wasm");
+});
+
+test("release asset resolver reports a missing release", async () => {
+  const fetch = async () => new Response("not found", { status: 404 });
+
+  await expect(releaseAssetUrl("agent-threads.wasm", "agent-threads-v9.8.7", fetch)).rejects.toThrow(
+    "missing release agent-threads-v9.8.7",
+  );
+});
+
+test("release asset resolver reports a missing asset", async () => {
+  const fetch = async () => Response.json({ assets: [{ name: "pi-agenthread.tar.gz", browser_download_url: "https://example.invalid/pi" }] });
+
+  await expect(releaseAssetUrl("agent-threads.wasm", "agent-threads-v9.8.7", fetch)).rejects.toThrow(
+    "missing release asset agent-threads.wasm in agent-threads-v9.8.7",
+  );
+});
+
+test("install reports a missing local release", () => {
+  const { home, config, release } = fixture({ pi: false });
+  rmSync(release, { recursive: true, force: true });
+
+  const result = runCli(["install", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("missing release agent-threads-v0.0.1");
+});
+
+test("install reports a missing local asset", () => {
+  const { home, config, release } = fixture({ pi: false });
+  rmSync(join(release, "agent-threads.wasm"), { force: true });
+
+  const result = runCli(["install", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("missing release asset agent-threads.wasm in agent-threads-v0.0.1");
+});
+
 function tempDb(): string {
   const dir = mkdtempSync(join(tmpdir(), "agent-threads-cli-test-"));
   dirs.push(dir);
@@ -195,7 +250,7 @@ function fixture(options: { pi: boolean; version?: string }) {
   mkdirSync(release, { recursive: true });
   mkdirSync(config, { recursive: true });
   mkdirSync(home, { recursive: true });
-  writeFileSync(join(release, "zellij-plugin-agent-threads.wasm"), "wasm");
+  writeFileSync(join(release, "agent-threads.wasm"), "wasm");
   writePiArchive(release);
   if (options.pi) mkdirSync(join(home, ".pi", "agent"), { recursive: true });
   return { home, config, release, version: options.version ?? "0.0.1" };
