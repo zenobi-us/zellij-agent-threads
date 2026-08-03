@@ -18,35 +18,55 @@ Display format is configurable with MiniJinja templates. See [Templates](#templa
 
 ## Install
 
-Requires [Zellij](https://zellij.dev/),
-[Pi](https://github.com/badlogic/pi-mono),
-[proto](https://moonrepo.dev/proto), and [Bun](https://bun.sh/).
+Requires [Zellij](https://zellij.dev/) and [Pi](https://github.com/badlogic/pi-mono).
 
-Clone repository, install toolchains and dependencies, then build and install
-both integrations:
+### Released install
+
+Download the `agent-threads` CLI from the latest GitHub release:
 
 ```sh
-git clone https://github.com/zenobi-us/zellij-agent-threads.git
-cd zellij-agent-threads
-proto install
-bun install
-moon run zellij-plugin:install
+mkdir -p ~/.local/bin
+curl -L https://github.com/zenobi-us/zellij-agent-threads/releases/latest/download/agent-threads-linux-x64 \
+  -o ~/.local/bin/agent-threads
+chmod +x ~/.local/bin/agent-threads
 ```
 
-This builds plugin for `wasm32-wasip1`, copies it to
-`~/.config/zellij/plugins/agent-threads.wasm`, and links Pi extension at
-`~/.pi/agent/extensions/zellij-agent`.
+Use the asset that matches your platform:
 
-Register plugin alias in `~/.config/zellij/config.kdl`. Pi extension uses this alias to direct
-session reports to one plugin instead of broadcasting them:
+- `agent-threads-linux-x64`
+- `agent-threads-linux-arm64`
+- `agent-threads-darwin-x64`
+- `agent-threads-darwin-arm64`
+- `agent-threads-windows-x64.exe`
+
+Then install the released plugin and Pi extension:
+
+```sh
+agent-threads install
+```
+
+The released installer downloads assets for the same version as the running CLI.
+It installs these files:
+
+- Zellij plugin: `~/.config/zellij/plugins/agent-threads.wasm`
+- Pi extension: `~/.pi/agent/extensions/pi-agenthread`
+
+The `--harness pi` flag does not skip the plugin. It selects the Pi extension after the plugin install.
+
+The installer prompts before it edits `~/.config/zellij/config.kdl` in an interactive terminal.
+Use `agent-threads install --yes` to edit the file without a prompt.
+In a non-interactive terminal, the installer prints the KDL snippet instead.
+It backs up an existing config file to `~/.config/zellij/config.kdl.bak` before it writes changes.
+
+The Zellij plugin alias uses this shape:
 
 ```kdl
 plugins {
-    agent-threads location="file:~/.config/zellij/plugins/agent-threads.wasm"
+    agent-threads location="file:/home/you/.config/zellij/plugins/agent-threads.wasm"
 }
 ```
 
-Add alias to Zellij layout:
+Add the alias to a Zellij layout:
 
 ```kdl
 layout {
@@ -56,8 +76,46 @@ layout {
 }
 ```
 
-Start Zellij using layout, then start Pi in any pane. Agent reports appear in plugin panel
-automatically.
+Start Zellij with that layout. Then start Pi in any pane.
+Agent reports appear in the plugin panel automatically.
+
+### Self-update
+
+Update the CLI from the stable channel:
+
+```sh
+agent-threads self-update
+```
+
+Use the prerelease channel when you need the next release candidate:
+
+```sh
+agent-threads self-update --channel prerelease
+```
+
+The `stable` channel selects the latest non-prerelease tag named `agent-threads-v*`.
+The `prerelease` channel selects the latest prerelease tag named `agent-threads-v*`.
+The aliases `latest` and `next` map to `stable` and `prerelease`.
+Self-update replaces only `~/.local/bin/agent-threads`.
+Run `agent-threads install` after self-update to align the plugin and Pi extension.
+
+### Contributor source install
+
+Source installs require [proto](https://moonrepo.dev/proto) and [Bun](https://bun.sh/).
+
+Clone the repository, install toolchains and dependencies, then build and install both integrations:
+
+```sh
+git clone https://github.com/zenobi-us/zellij-agent-threads.git
+cd zellij-agent-threads
+proto install
+bun install
+moon run zellij-plugin:install
+```
+
+This builds the plugin for `wasm32-wasip1`, copies it to
+`~/.config/zellij/plugins/agent-threads.wasm`, and installs the Pi extension at
+`~/.pi/agent/extensions/pi-agenthread`.
 
 For development, rebuild and reload whenever Rust source changes:
 
@@ -124,7 +182,8 @@ Agent presence comes from the `agent-threads` CLI singleton store. Pi writes rep
 `agent-threads delete --agent-id '<id>'`. The CLI stores rows in SQLite at
 `$XDG_RUNTIME_DIR/zellij-agent-threads/state.sqlite`. The plugin polls
 `agent-threads snapshot --json` and replaces its in-memory agent list with that snapshot.
-Zellij pipes are wake/control signals only; `agenthreads:summary` remote polling is deprecated.
+Zellij pipes are wake/control signals only.
+`agenthreads:summary` remote polling is deprecated.
 
 The old `groups`, `group.sessions`, and `current_task` template names are removed.
 
@@ -149,7 +208,9 @@ formatting. `format_time` formats Unix timestamps.
 
 Pi publishes version-two Agent Reports only. The payload uses `agent_id` as the stable agent key
 and `session_name` as diagnostic metadata. If a report has a `pane_id`, the store key is
-`zellij_session:pane_id`; otherwise it is `agent_id`. Each upsert renews a ten-second SQLite lease.
+`zellij_session:pane_id`.
+Otherwise, it is `agent_id`.
+Each upsert renews a ten-second SQLite lease.
 Reports with any other `version` are rejected by the store or recorded as pipe errors.
 
 Version one is removed. The old `session` field and `current_task` field are not accepted.
