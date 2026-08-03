@@ -20,8 +20,10 @@
       {%- set agent_is_last = loop.last -%}
       {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
       {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
-      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}{{- tree.prefix_line(loop.index0, loop.length, [tab_is_last]) | dim }} {{ t(agent_label, agent.focused) }}
-        {%- if agent.state == "running" and agent.current_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }} {{ agent.current_tool | dim }}{%- endif -%}
+      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}{{- tree.prefix_line(loop.index0, loop.length, [tab_is_last]) | dim }}{{ t(agent_label, agent.focused) }}
+        {%- if agent.state == "running" and agent.current_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("? " ~ agent.current_tool) | dim if agent.current_tool_kind == "user_question" else ("↳ " ~ agent.current_tool) | dim }}{%- endif -%}
+        {%- if agent.state == "running" and not agent.current_tool and agent.last_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("last: " ~ agent.last_tool) | dim }}{%- endif -%}
+        {%- if agent.state != "running" and agent.settled_reason -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("settled: " ~ agent.settled_reason) | dim }}{%- endif -%}
       {%- endcall -%}
     {%- endfor -%}
   {%- endfor -%}

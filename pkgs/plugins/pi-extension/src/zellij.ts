@@ -15,6 +15,9 @@ export function pipeArgs(payload = "refresh"): string[] {
 }
 
 export type AgentState = "idle" | "running" | "shutdown";
+export type AgentActivity = "thinking" | "tool_running" | "waiting_for_user" | "settled";
+export type ToolKind = "tool" | "user_question";
+export type SettledReason = "finished" | "failed" | "aborted";
 
 type PaneTabInfo = {
   id?: number;
@@ -27,8 +30,15 @@ type PaneTabInfo = {
 
 type PublisherState = {
   state: AgentState;
+  activity?: AgentActivity;
   title?: string;
   currentTool?: string;
+  currentToolKind?: ToolKind;
+  lastTool?: string;
+  lastToolAt?: number;
+  settledReason?: SettledReason;
+  settledMessage?: string;
+  sequence: number;
 };
 
 /**
@@ -47,7 +57,7 @@ export class ZellijPublisher {
   constructor(
     private statusWidget: StatusWidget,
     private log: LogService,
-    private state: PublisherState = { state: "idle" },
+    private state: PublisherState = { state: "idle", activity: "settled", sequence: 0 },
   ) {}
 
   /**
@@ -71,6 +81,7 @@ export class ZellijPublisher {
    * only a best-effort wake signal; SQLite is the source of truth.
    */
   async publish(ctx: ExtensionContext, nextState = this.state.state, updateStatus = true): Promise<void> {
+    this.state.sequence += 1;
     this.state.state = nextState;
     const state = { ...this.state };
     this.publishTail = this.publishTail.then(
@@ -108,9 +119,16 @@ export class ZellijPublisher {
         tab_id: tab?.tab_id,
         tab_name: tab?.tab_name,
         state: state.state,
+        activity: state.activity,
         model: ctx.model?.id,
         title: paneTitle,
         current_tool: state.currentTool,
+        current_tool_kind: state.currentToolKind,
+        last_tool: state.lastTool,
+        last_tool_at: state.lastToolAt,
+        settled_reason: state.settledReason,
+        settled_message: state.settledMessage,
+        sequence: state.sequence,
         updated_at: Date.now(),
       });
 

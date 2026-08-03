@@ -639,6 +639,10 @@ impl RuntimeState {
             return true;
         };
 
+        if self.agent_report_is_stale(&session) {
+            return false;
+        }
+
         self.renew_agent_lease(&session);
 
         if !self.agent_update_changes_render(&session) {
@@ -755,6 +759,16 @@ impl RuntimeState {
         } else {
             self.agent_leases.insert(key, self.lease_clock);
         }
+    }
+
+    fn agent_report_is_stale(&self, session: &AgentReport) -> bool {
+        let Some(next_sequence) = session.sequence else {
+            return false;
+        };
+        self.agents
+            .get(&session.cache_key())
+            .and_then(|current| current.sequence)
+            .is_some_and(|current_sequence| next_sequence <= current_sequence)
     }
 
     fn agent_pane_is_live(&self, agent: &AgentReport) -> bool {
@@ -874,9 +888,16 @@ pub(crate) struct AgentReport {
     pub(crate) tab_id: Option<usize>,
     pub(crate) tab_name: Option<String>,
     pub(crate) state: AgentState,
+    pub(crate) activity: Option<AgentActivity>,
     pub(crate) model: Option<String>,
     pub(crate) title: Option<String>,
     pub(crate) current_tool: Option<String>,
+    pub(crate) current_tool_kind: Option<ToolKind>,
+    pub(crate) last_tool: Option<String>,
+    pub(crate) last_tool_at: Option<u64>,
+    pub(crate) settled_reason: Option<SettledReason>,
+    pub(crate) settled_message: Option<String>,
+    pub(crate) sequence: Option<u64>,
     pub(crate) updated_at: u64,
 }
 
@@ -887,6 +908,30 @@ pub(crate) enum AgentState {
     Idle,
     Running,
     Shutdown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AgentActivity {
+    Thinking,
+    ToolRunning,
+    WaitingForUser,
+    Settled,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ToolKind {
+    Tool,
+    UserQuestion,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum SettledReason {
+    Finished,
+    Failed,
+    Aborted,
 }
 
 impl AgentReport {
@@ -908,9 +953,15 @@ impl AgentReport {
             && self.agent_id == other.agent_id
             && self.session_name == other.session_name
             && self.state == other.state
+            && self.activity == other.activity
             && self.model == other.model
             && self.title == other.title
             && self.current_tool == other.current_tool
+            && self.current_tool_kind == other.current_tool_kind
+            && self.last_tool == other.last_tool
+            && self.last_tool_at == other.last_tool_at
+            && self.settled_reason == other.settled_reason
+            && self.settled_message == other.settled_message
     }
 }
 
@@ -1021,9 +1072,16 @@ mod tests {
             tab_name: None,
             zellij_session: None,
             state: AgentState::Idle,
+            activity: None,
             model: None,
             title: None,
             current_tool: None,
+            current_tool_kind: None,
+            last_tool: None,
+            last_tool_at: None,
+            settled_reason: None,
+            settled_message: None,
+            sequence: None,
             updated_at: 0,
         }
     }
@@ -1124,13 +1182,27 @@ mod tests {
             "session_name": "diagnostic-session",
             "cwd": "/tmp",
             "state": "running",
+            "activity": "waiting_for_user",
             "current_tool": "bash",
+            "current_tool_kind": "user_question",
+            "last_tool": "bash",
+            "last_tool_at": 42,
+            "settled_reason": "failed",
+            "settled_message": "boom",
+            "sequence": 7,
             "updated_at": 0
         });
 
         let session: AgentReport = serde_json::from_value(payload).unwrap();
 
         assert_eq!(session.current_tool.as_deref(), Some("bash"));
+        assert_eq!(session.activity, Some(AgentActivity::WaitingForUser));
+        assert_eq!(session.current_tool_kind, Some(ToolKind::UserQuestion));
+        assert_eq!(session.last_tool.as_deref(), Some("bash"));
+        assert_eq!(session.last_tool_at, Some(42));
+        assert_eq!(session.settled_reason, Some(SettledReason::Failed));
+        assert_eq!(session.settled_message.as_deref(), Some("boom"));
+        assert_eq!(session.sequence, Some(7));
     }
 
     #[test]
@@ -1175,6 +1247,23 @@ mod tests {
         unchanged.updated_at = 2;
         assert!(!runtime.handle_pipe(pipe_message(unchanged)));
         assert_eq!(runtime.pipe_count, 1);
+    }
+
+    #[test]
+    fn stale_sequence_pipe_does_not_overwrite_newer_agent() {
+        let mut runtime = RuntimeState::default();
+        let mut fresh = session("a", Some("1"));
+        fresh.state = AgentState::Idle;
+        fresh.sequence = Some(2);
+        assert!(runtime.handle_pipe(pipe_message(fresh)));
+
+        let mut stale = session("a", Some("1"));
+        stale.state = AgentState::Running;
+        stale.sequence = Some(1);
+
+        assert!(!runtime.handle_pipe(pipe_message(stale)));
+        assert_eq!(runtime.agents["1"].state, AgentState::Idle);
+        assert_eq!(runtime.agents["1"].sequence, Some(2));
     }
 
     #[test]

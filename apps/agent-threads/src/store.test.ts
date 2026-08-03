@@ -100,3 +100,49 @@ test("snapshot deletes expired rows", () => {
     db.close();
   }
 });
+
+test("snapshot keeps lifecycle metadata", () => {
+  const db = store();
+  try {
+    db.upsert({
+      ...report("a", "7"),
+      activity: "waiting_for_user",
+      current_tool: "question",
+      current_tool_kind: "user_question",
+      last_tool: "question",
+      last_tool_at: 1_500,
+      settled_reason: "failed",
+      settled_message: "boom",
+      sequence: 3,
+    }, 1_000);
+
+    expect(db.snapshot(1_001).agents[0]).toMatchObject({
+      activity: "waiting_for_user",
+      current_tool: "question",
+      current_tool_kind: "user_question",
+      last_tool: "question",
+      last_tool_at: 1_500,
+      settled_reason: "failed",
+      settled_message: "boom",
+      sequence: 3,
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test("older sequence cannot overwrite newer state", () => {
+  const db = store();
+  try {
+    db.upsert({ ...report("a", "7"), state: "idle", sequence: 2, updated_at: 2_000 }, 2_000);
+    db.upsert({ ...report("a", "7"), state: "running", sequence: 1, updated_at: 1_000 }, 1_000);
+
+    expect(db.snapshot(2_001).agents[0]).toMatchObject({
+      state: "idle",
+      sequence: 2,
+      updated_at: 2_000,
+    });
+  } finally {
+    db.close();
+  }
+});

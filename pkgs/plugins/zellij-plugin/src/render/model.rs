@@ -1,7 +1,9 @@
 use serde::Serialize;
 
 use crate::config::RenderConfig;
-use crate::runtime::{basename, state_label, RuntimeState, ZellijSession};
+use crate::runtime::{
+    basename, state_label, AgentActivity, RuntimeState, SettledReason, ToolKind, ZellijSession,
+};
 
 /// Render-ready snapshot of runtime state.
 ///
@@ -56,6 +58,7 @@ pub(super) struct AgentLine {
     agent_id: String,
     session_name: String,
     state: &'static str,
+    activity: String,
     pane_id: String,
     pane: String,
     cwd: String,
@@ -64,6 +67,10 @@ pub(super) struct AgentLine {
     zellij_session: String,
     harness: String,
     current_tool: String,
+    current_tool_kind: String,
+    last_tool: String,
+    settled_reason: String,
+    settled_message: String,
     focused: bool,
     active_tab: bool,
 }
@@ -178,7 +185,7 @@ impl RenderModel {
                     1 + tab
                         .agents
                         .iter()
-                        .map(|agent| 3 + usize::from(agent.state == "running"))
+                        .map(|agent| 3 + usize::from(agent_has_activity_line(agent)))
                         .sum::<usize>()
                 })
                 .sum::<usize>()
@@ -253,6 +260,12 @@ fn agent_line(session: &crate::runtime::AgentReport, state: &RuntimeState) -> Ag
         agent_id: session.agent_id.clone(),
         session_name: session.session_name.clone().unwrap_or_default(),
         state: state_label(&session.state),
+        activity: session
+            .activity
+            .as_ref()
+            .map(activity_label)
+            .unwrap_or_default()
+            .into(),
         focused: state.focused_pane.as_deref() == Some(pane.as_str()),
         active_tab: session.tab_id == state.active_tab,
         pane_id: pane_stable_id(&session_id, &pane),
@@ -270,6 +283,49 @@ fn agent_line(session: &crate::runtime::AgentReport, state: &RuntimeState) -> Ag
             .clone()
             .unwrap_or_else(|| basename(&session.cwd).into()),
         current_tool: session.current_tool.clone().unwrap_or_default(),
+        current_tool_kind: session
+            .current_tool_kind
+            .as_ref()
+            .map(tool_kind_label)
+            .unwrap_or_default()
+            .into(),
+        last_tool: session.last_tool.clone().unwrap_or_default(),
+        settled_reason: session
+            .settled_reason
+            .as_ref()
+            .map(settled_reason_label)
+            .unwrap_or_default()
+            .into(),
+        settled_message: session.settled_message.clone().unwrap_or_default(),
+    }
+}
+
+fn agent_has_activity_line(agent: &AgentLine) -> bool {
+    agent.state == "running" && (!agent.current_tool.is_empty() || !agent.last_tool.is_empty())
+        || !agent.settled_reason.is_empty()
+}
+
+fn activity_label(activity: &AgentActivity) -> &'static str {
+    match activity {
+        AgentActivity::Thinking => "thinking",
+        AgentActivity::ToolRunning => "tool_running",
+        AgentActivity::WaitingForUser => "waiting_for_user",
+        AgentActivity::Settled => "settled",
+    }
+}
+
+fn tool_kind_label(kind: &ToolKind) -> &'static str {
+    match kind {
+        ToolKind::Tool => "tool",
+        ToolKind::UserQuestion => "user_question",
+    }
+}
+
+fn settled_reason_label(reason: &SettledReason) -> &'static str {
+    match reason {
+        SettledReason::Finished => "finished",
+        SettledReason::Failed => "failed",
+        SettledReason::Aborted => "aborted",
     }
 }
 
@@ -430,9 +486,16 @@ mod tests {
             tab_name: Some("Agents".into()),
             zellij_session: Some("z".into()),
             state: AgentState::Running,
+            activity: None,
             model: Some("m".into()),
             title: Some(title.into()),
             current_tool: None,
+            current_tool_kind: None,
+            last_tool: None,
+            last_tool_at: None,
+            settled_reason: None,
+            settled_message: None,
+            sequence: None,
             updated_at: 0,
         }
     }
@@ -575,9 +638,16 @@ mod tests {
                     tab_name: Some("Agents".into()),
                     zellij_session: Some("z".into()),
                     state: AgentState::Running,
+                    activity: None,
                     model: None,
                     title: None,
                     current_tool: None,
+                    current_tool_kind: None,
+                    last_tool: None,
+                    last_tool_at: None,
+                    settled_reason: None,
+                    settled_message: None,
+                    sequence: None,
                     updated_at: 0,
                 },
             )]),
@@ -652,9 +722,16 @@ mod tests {
                     tab_name: Some("Stale".into()),
                     zellij_session: Some("z".into()),
                     state: AgentState::Idle,
+                    activity: None,
                     model: None,
                     title: None,
                     current_tool: None,
+                    current_tool_kind: None,
+                    last_tool: None,
+                    last_tool_at: None,
+                    settled_reason: None,
+                    settled_message: None,
+                    sequence: None,
                     updated_at: 0,
                 },
             )]),
@@ -685,9 +762,16 @@ mod tests {
                     tab_name: Some("Stale".into()),
                     zellij_session: Some("z".into()),
                     state: AgentState::Idle,
+                    activity: None,
                     model: None,
                     title: None,
                     current_tool: None,
+                    current_tool_kind: None,
+                    last_tool: None,
+                    last_tool_at: None,
+                    settled_reason: None,
+                    settled_message: None,
+                    sequence: None,
                     updated_at: 0,
                 },
             )]),

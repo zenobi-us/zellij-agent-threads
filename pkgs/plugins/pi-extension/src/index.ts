@@ -1,8 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, loadConfig, type ZellijAgentConfig } from "./config.js";
 import { StatusWidget } from "./status.js";
 import { LogService } from "./log.js";
-import { ZellijPublisher } from "./zellij.js";
+import { ZellijPublisher, type SettledReason, type ToolKind } from "./zellij.js";
 
 const STATUS_KEY = "zellij-agent";
 
@@ -37,6 +37,8 @@ export default function (pi: ExtensionAPI) {
   let statusWidget = new StatusWidget(STATUS_KEY, defaults.statusBarTemplate);
   const log = new LogService();
   const publisher = new ZellijPublisher(statusWidget, log);
+  const activeTools = new Map<string, { name: string; kind: ToolKind }>();
+  let settled: { reason: SettledReason; message?: string } = { reason: "finished" };
 
   /**
    * Rebuilds config-backed services on every session runtime start.
@@ -58,6 +60,17 @@ export default function (pi: ExtensionAPI) {
    * immediately without waiting for a tool call.
    */
   pi.on("before_agent_start", (_event, ctx) => {
+    activeTools.clear();
+    settled = { reason: "finished" };
+    publisher.update({
+      activity: "thinking",
+      currentTool: undefined,
+      currentToolKind: undefined,
+      lastTool: undefined,
+      lastToolAt: undefined,
+      settledReason: undefined,
+      settledMessage: undefined,
+    });
     void publisher.publish(ctx, "running");
   });
 
@@ -65,16 +78,42 @@ export default function (pi: ExtensionAPI) {
    * Covers Pi turns that start without prompt preprocessing. Duplicate running
    * publishes are harmless; stale status is worse than one extra pipe write.
    */
-  pi.on("agent_start", (_event, ctx) => { void publisher.publish(ctx, "running"); });
+  pi.on("agent_start", (_event, ctx) => {
+    activeTools.clear();
+    settled = { reason: "finished" };
+    publisher.update({
+      activity: "thinking",
+      lastTool: undefined,
+      lastToolAt: undefined,
+      settledReason: undefined,
+      settledMessage: undefined,
+    });
+    void publisher.publish(ctx, "running");
+  });
 
   /**
-   * Delays idle publish so retries, compaction, and follow-ups can start first.
-   * Conversation title/task naming belongs to a separate extension.
+   * Records the last turn result. `agent_end` is not final because retries,
+   * compaction, and queued follow-ups can still run after it.
    */
   pi.on("agent_end", (_event, ctx) => {
-    setTimeout(() => {
-      if (ctx.isIdle()) void publisher.publish(ctx, "idle");
-    }, 100);
+    settled = settledFromMessages(_event.messages);
+    void publisher.publish(ctx);
+  });
+
+  /**
+   * Pi emits `agent_settled` only after retries, compaction, and follow-ups are
+   * done. This is the lifecycle edge that can safely clear the running state.
+   */
+  (pi.on as unknown as (event: "agent_settled", handler: (event: unknown, ctx: ExtensionContext) => void) => void)("agent_settled", (_event, ctx) => {
+    activeTools.clear();
+    publisher.update({
+      activity: "settled",
+      currentTool: undefined,
+      currentToolKind: undefined,
+      settledReason: settled.reason,
+      settledMessage: settled.message,
+    });
+    void publisher.publish(ctx, "idle");
   });
 
   /**
@@ -89,12 +128,28 @@ export default function (pi: ExtensionAPI) {
    * concise value fits the footer better than a growing set.
    */
   pi.on("tool_execution_start", (event, ctx) => {
-    publisher.update({ currentTool: event.toolName });
+    const kind = toolKind(event.toolName);
+    activeTools.set(event.toolCallId, { name: event.toolName, kind });
+    publisher.update({
+      activity: kind === "user_question" ? "waiting_for_user" : "tool_running",
+      currentTool: event.toolName,
+      currentToolKind: kind,
+      lastTool: event.toolName,
+      lastToolAt: Date.now(),
+    });
     void publisher.publish(ctx, "running");
   });
 
-  pi.on("tool_execution_end", (_event, ctx) => {
-    publisher.update({ currentTool: undefined });
+  pi.on("tool_execution_end", (event, ctx) => {
+    activeTools.delete(event.toolCallId);
+    const active = Array.from(activeTools.values()).at(-1);
+    publisher.update({
+      activity: active ? (active.kind === "user_question" ? "waiting_for_user" : "tool_running") : "thinking",
+      currentTool: active?.name,
+      currentToolKind: active?.kind,
+      lastTool: event.toolName,
+      lastToolAt: Date.now(),
+    });
     void publisher.publish(ctx);
   });
 
@@ -104,6 +159,7 @@ export default function (pi: ExtensionAPI) {
    */
   pi.on("session_shutdown", async (_event, ctx) => {
     publisher.stopRefresh();
+    publisher.update({ currentTool: undefined, currentToolKind: undefined });
     await publisher.publish(ctx, "shutdown");
   });
 
@@ -122,4 +178,20 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+}
+
+function toolKind(toolName: string): ToolKind {
+  const name = toolName.toLowerCase();
+  return /(^|[^a-z])(ask|question|questions)([^a-z]|$)/.test(name) ? "user_question" : "tool";
+}
+
+function settledFromMessages(messages: unknown[]): { reason: SettledReason; message?: string } {
+  const assistant = [...messages].reverse().find((message) => {
+    return Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant");
+  }) as { stopReason?: unknown; errorMessage?: unknown } | undefined;
+  const stopReason = typeof assistant?.stopReason === "string" ? assistant.stopReason : "stop";
+  const message = typeof assistant?.errorMessage === "string" ? assistant.errorMessage : undefined;
+  if (stopReason === "error") return { reason: "failed", message };
+  if (stopReason === "aborted") return { reason: "aborted", message };
+  return { reason: "finished", message };
 }

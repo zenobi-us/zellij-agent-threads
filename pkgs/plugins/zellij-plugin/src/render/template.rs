@@ -745,9 +745,16 @@ mod tests {
             tab_name: Some("Agents".into()),
             zellij_session: Some("z".into()),
             state: AgentState::Running,
+            activity: None,
             model: Some("m".into()),
             title: Some(title.into()),
             current_tool: Some("bash".into()),
+            current_tool_kind: None,
+            last_tool: None,
+            last_tool_at: None,
+            settled_reason: None,
+            settled_message: None,
+            sequence: None,
             updated_at: 0,
         }
     }
