@@ -1,52 +1,68 @@
 #!/usr/bin/env bun
 import { AgentStore, defaultStorePath, parseReportJson } from "./store.js";
 
-const args = process.argv.slice(2);
+export type CliIo = {
+  argv: string[];
+  env?: NodeJS.ProcessEnv;
+  stdin?: unknown;
+  stdout?: (chunk: string) => void;
+  stderr?: (chunk: string) => void;
+};
 
-try {
-  const { command, flags } = parseArgs(args);
-  const store = new AgentStore(flags.db ?? process.env.AGENT_THREADS_DB ?? defaultStorePath());
+export function runAgentThreads({
+  argv,
+  env = process.env,
+  stdout = (chunk) => process.stdout.write(chunk),
+  stderr = (chunk) => process.stderr.write(chunk),
+}: CliIo): number {
   try {
-    switch (command) {
-      case "upsert": {
-        const json = requireFlag(flags, "json");
-        store.upsert(parseReportJson(json));
-        break;
-      }
-      case "delete": {
-        const agentId = requireFlag(flags, "agent-id");
-        store.delete(agentId);
-        break;
-      }
-      case "snapshot": {
-        const snapshot = store.snapshot();
-        if (flags.json === "true") {
-          console.log(JSON.stringify(snapshot));
-        } else {
-          for (const agent of snapshot.agents) {
-            console.log(`${agent.state}\t${agent.zellij_session ?? "?"}\t${agent.pane_id ?? "?"}\t${agent.title ?? agent.cwd}`);
-          }
-        }
-        break;
-      }
-      case "gc": {
-        const removed = store.gc();
-        if (flags.json === "true") console.log(JSON.stringify({ removed }));
-        break;
-      }
-      case "help":
-      case undefined:
-        usage(0);
-        break;
-      default:
-        throw new Error(`unknown command: ${command}`);
+    const { command, flags } = parseArgs(argv);
+    if (command === "help" || command === undefined) {
+      writeLine(stdout, usageText());
+      return 0;
     }
-  } finally {
-    store.close();
+
+    const store = new AgentStore(flags.db ?? env.AGENT_THREADS_DB ?? defaultStorePath(env));
+    try {
+      switch (command) {
+        case "upsert": {
+          const json = requireFlag(flags, "json");
+          store.upsert(parseReportJson(json));
+          break;
+        }
+        case "delete": {
+          const agentId = requireFlag(flags, "agent-id");
+          store.delete(agentId);
+          break;
+        }
+        case "snapshot": {
+          const snapshot = store.snapshot();
+          if (flags.json === "true") {
+            writeLine(stdout, JSON.stringify(snapshot));
+          } else {
+            for (const agent of snapshot.agents) {
+              writeLine(stdout, `${agent.state}\t${agent.zellij_session ?? "?"}\t${agent.pane_id ?? "?"}\t${agent.title ?? agent.cwd}`);
+            }
+          }
+          break;
+        }
+        case "gc": {
+          const removed = store.gc();
+          if (flags.json === "true") writeLine(stdout, JSON.stringify({ removed }));
+          break;
+        }
+        default:
+          throw new Error(`unknown command: ${command}`);
+      }
+    } finally {
+      store.close();
+    }
+    return 0;
+  } catch (error) {
+    writeLine(stderr, error instanceof Error ? error.message : String(error));
+    writeLine(stderr, usageText());
+    return 1;
   }
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  usage(1);
 }
 
 type ParsedArgs = {
@@ -79,12 +95,18 @@ function requireFlag(flags: Record<string, string>, name: string): string {
   return value;
 }
 
-function usage(exitCode: number): never {
-  const out = exitCode === 0 ? console.log : console.error;
-  out(`usage:
+function writeLine(write: (chunk: string) => void, text: string): void {
+  write(`${text}\n`);
+}
+
+function usageText(): string {
+  return `usage:
   agent-threads upsert --json '<AgentReportV2>' [--db path]
   agent-threads delete --agent-id '<id>' [--db path]
   agent-threads snapshot --json [--db path]
-  agent-threads gc [--json] [--db path]`);
-  process.exit(exitCode);
+  agent-threads gc [--json] [--db path]`;
+}
+
+if (import.meta.main) {
+  process.exit(runAgentThreads({ argv: process.argv.slice(2) }));
 }
