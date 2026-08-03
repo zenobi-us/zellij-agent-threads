@@ -30,3 +30,19 @@ _Avoid_: Global agent registry, remote agent list
 
 **Template button**:
 Rendered text that maps click hitboxes to a Zellij action such as focusing a pane, switching a tab, or switching a Zellij session.
+
+**Harness**:
+An AI agent runtime that can report agent activity to `agent-threads`.
+_Avoid_: Client, integration
+
+**Harness manifest**:
+A declarative record that names a supported harness and its install assets, paths, and documentation links.
+_Avoid_: Harness plugin, adapter script
+
+**Released installer**:
+The `agent-threads install` path that installs release assets for the same version as the running CLI.
+_Avoid_: Source install, dev install
+
+**Self-update**:
+The `agent-threads self-update` path that replaces the CLI binary in `~/.local/bin` from a selected release channel.
+_Avoid_: Install, upgrade everything
