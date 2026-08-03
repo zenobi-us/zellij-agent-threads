@@ -54,6 +54,28 @@ test("install copies same-version plugin and detected Pi extension", () => {
   expect(result.stdout).toContain("Add this Zellij plugin alias");
 });
 
+test("plain install completes plugin, supported harnesses, reload, and leaves CLI alone", () => {
+  const { home, config, release } = fixture({ pi: true });
+  const bin = join(home, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "zellij"), "#!/usr/bin/env sh\nexit 0\n");
+  chmodSync(join(bin, "zellij"), 0o755);
+  writeFileSync(join(bin, "agent-threads"), "old-cli");
+
+  const result = runCli(["install"], home, config, release, "0.0.1", bin);
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(join(config, "zellij", "plugins", "agent-threads.wasm"), "utf8")).toBe("wasm");
+  expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
+  expect(readFileSync(join(bin, "agent-threads"), "utf8")).toBe("old-cli");
+  expect(result.stdout).toContain("Completed:");
+  expect(result.stdout).toContain("installed Zellij plugin");
+  expect(result.stdout).toContain("installed pi extension");
+  expect(result.stdout).toContain("reloaded Zellij plugin");
+  expect(result.stdout).toContain("Manual next steps:");
+  expect(result.stdout).not.toContain("Warnings:");
+});
+
 test("install detects Pi from the pi command on PATH", () => {
   const { home, config, release } = fixture({ pi: false });
   const bin = join(home, "bin");
@@ -173,13 +195,20 @@ test("config edit mutates an existing plugins KDL node", () => {
   expect(result.stdout).not.toContain("conservative append");
 });
 
-test("install warns when best-effort Zellij reload fails", () => {
-  const { home, config, release } = fixture({ pi: false });
+test("plain install warning still reports successful installed files and manual steps", () => {
+  const { home, config, release } = fixture({ pi: true });
 
   const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(0);
+  expect(readFileSync(join(config, "zellij", "plugins", "agent-threads.wasm"), "utf8")).toBe("wasm");
+  expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
+  expect(result.stdout).toContain("Completed:");
+  expect(result.stdout).toContain("installed Zellij plugin");
+  expect(result.stdout).toContain("installed pi extension");
+  expect(result.stdout).toContain("Warnings:");
   expect(result.stdout).toContain("Zellij reload failed; files still installed");
+  expect(result.stdout).toContain("Manual next steps:");
 });
 
 test("install reports successful Zellij reload as completed work", () => {
