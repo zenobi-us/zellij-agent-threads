@@ -5,13 +5,25 @@
   "bump-patch-for-minor-pre-major": true,
   "release-type": "node",
   "packages": {
+    "apps/agent-threads": {
+      "component": "agent-threads",
+      "group": "tool",
+      "release-type": "node"
+    },
     "apps/docs": {
+      "component": "docs",
       "group": "application",
       "release-type": "node"
     },
     "pkgs/plugins/pi-extension": {
-      "group": "plugin",
+      "component": "pi-extension",
+      "group": "library",
       "release-type": "node"
+    },
+    "pkgs/plugins/zellij-plugin": {
+      "component": "zellij-plugin",
+      "group": "library",
+      "release-type": "rust"
     }
   },
   "plugins": [

@@ -46,6 +46,8 @@ tasks:
     inputs:
       - "package.json"
       - "src/**/*.ts"
+    outputs:
+      - "dist/pi-agenthread.tar.gz"
     options:
       cache: false
       runInCI: true

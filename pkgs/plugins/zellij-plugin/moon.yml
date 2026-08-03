@@ -115,7 +115,7 @@ tasks:
       set -euo pipefail
 
       wasm_path="$PWD/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
-      asset_name="zellij-plugin-agent-threads.wasm"
+      asset_name="agent-threads.wasm"
       repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
       tag="${PUBLISH_RELEASE_TAG:?PUBLISH_RELEASE_TAG is required}"
 

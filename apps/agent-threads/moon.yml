@@ -26,17 +26,26 @@ tasks:
       - "package.json"
       - "src/**/*.ts"
     outputs:
-      - "dist/agent-threads-*"
+      - "dist/agent-threads-linux-x64"
+      - "dist/agent-threads-linux-arm64"
+      - "dist/agent-threads-darwin-x64"
+      - "dist/agent-threads-darwin-arm64"
+      - "dist/agent-threads-windows-x64.exe"
     options:
       runInCI: true
     script: |
       set -euo pipefail
-      platform="$(bun -e 'console.log(process.platform)')"
-      arch="$(bun -e 'console.log(process.arch)')"
-      ext=""
-      if [ "$platform" = "win32" ]; then ext=".exe"; fi
       mkdir -p dist
-      bun build ./src/index.ts --compile --target "bun-${platform}-${arch}" --outfile "dist/agent-threads-${platform}-${arch}${ext}"
+      bun build ./src/index.ts --compile --target=bun-linux-x64 \
+        --outfile=dist/agent-threads-linux-x64
+      bun build ./src/index.ts --compile --target=bun-linux-arm64 \
+        --outfile=dist/agent-threads-linux-arm64
+      bun build ./src/index.ts --compile --target=bun-darwin-x64 \
+        --outfile=dist/agent-threads-darwin-x64
+      bun build ./src/index.ts --compile --target=bun-darwin-arm64 \
+        --outfile=dist/agent-threads-darwin-arm64
+      bun build ./src/index.ts --compile --target=bun-windows-x64 \
+        --outfile=dist/agent-threads-windows-x64.exe
 
   lint:
     deps:
@@ -65,6 +74,8 @@ tasks:
     type: run
     deps:
       - "~:build"
+      - "zellij-plugin:build"
+      - "pi-extension:typecheck"
     inputs:
       - "dist/agent-threads-*"
     options:
@@ -73,14 +84,28 @@ tasks:
     script: |
       set -euo pipefail
 
+      workspace_root="${MOON_WORKSPACE_ROOT:-$(git rev-parse --show-toplevel)}"
       repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
       tag="${PUBLISH_RELEASE_TAG:?PUBLISH_RELEASE_TAG is required}"
+      wasm_path="${workspace_root}/pkgs/plugins/zellij-plugin/target/wasm32-wasip1/release/zellij-plugin-agent-threads.wasm"
+      pi_asset="dist/pi-agenthread.tar.gz"
+
+      mkdir -p dist
+      tar --exclude node_modules --exclude .moon --exclude dist -czf "$pi_asset" \
+        -C "${workspace_root}/pkgs/plugins/pi-extension" .
 
       gh release view "$tag" --repo "$repo" >/dev/null
-      uploaded=0
-      for asset in dist/agent-threads-*; do
-        test -f "$asset" || continue
-        gh release upload "$tag" "$asset#$(basename "$asset")" --repo "$repo" --clobber
-        uploaded=$((uploaded + 1))
+      for asset_name in \
+        agent-threads-linux-x64 \
+        agent-threads-linux-arm64 \
+        agent-threads-darwin-x64 \
+        agent-threads-darwin-arm64 \
+        agent-threads-windows-x64.exe
+      do
+        asset="dist/${asset_name}"
+        test -f "$asset"
+        gh release upload "$tag" "$asset#${asset_name}" --repo "$repo" --clobber
       done
-      test "$uploaded" -gt 0
+      test -f "$wasm_path"
+      gh release upload "$tag" "$wasm_path#agent-threads.wasm" --repo "$repo" --clobber
+      gh release upload "$tag" "$pi_asset#pi-agenthread.tar.gz" --repo "$repo" --clobber
