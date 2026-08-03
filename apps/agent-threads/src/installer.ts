@@ -86,7 +86,7 @@ export async function install(options: InstallOptions = {}): Promise<number> {
   }
 
   await handleZellijConfig(env, options.yes === true, completed, warnings, nextSteps);
-  if (!options.noReload) reloadZellijPlugin(env, warnings);
+  if (!options.noReload) reloadZellijPlugin(env, completed, warnings);
 
   printSummary(completed, warnings, nextSteps);
   return 0;
@@ -290,9 +290,13 @@ async function confirmConfigEdit(env: NodeJS.ProcessEnv): Promise<boolean> {
   }
 }
 
-function reloadZellijPlugin(env: NodeJS.ProcessEnv, warnings: string[]): void {
+function reloadZellijPlugin(env: NodeJS.ProcessEnv, completed: string[], warnings: string[]): void {
   const result = spawnSync("zellij", ["action", "start-or-reload-plugin", `file:${zellijPluginPath(env)}`], { encoding: "utf8", env });
-  if (result.status !== 0) warnings.push(`Zellij reload failed; files still installed${result.stderr ? `: ${result.stderr.trim()}` : ""}`);
+  if (result.status === 0) {
+    completed.push("reloaded Zellij plugin");
+    return;
+  }
+  warnings.push(`Zellij reload failed; files still installed${result.stderr ? `: ${result.stderr.trim()}` : ""}`);
 }
 
 function printSummary(completed: string[], warnings: string[], nextSteps: string[]): void {

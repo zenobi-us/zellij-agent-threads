@@ -54,6 +54,18 @@ test("install copies same-version plugin and detected Pi extension", () => {
   expect(result.stdout).toContain("Add this Zellij plugin alias");
 });
 
+test("install replaces an existing Zellij plugin file", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const pluginPath = join(config, "zellij", "plugins", "agent-threads.wasm");
+  mkdirSync(join(config, "zellij", "plugins"), { recursive: true });
+  writeFileSync(pluginPath, "old");
+
+  const result = runCli(["install", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(pluginPath, "utf8")).toBe("wasm");
+});
+
 test("install skips Pi extension when Pi is not detected", () => {
   const { home, config, release } = fixture({ pi: false });
 
@@ -139,6 +151,20 @@ test("install warns when best-effort Zellij reload fails", () => {
 
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("Zellij reload failed; files still installed");
+});
+
+test("install reports successful Zellij reload as completed work", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const bin = join(home, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "zellij"), "#!/usr/bin/env sh\nexit 0\n");
+  chmodSync(join(bin, "zellij"), 0o755);
+
+  const result = runCli(["install"], home, config, release, "0.0.1", bin);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("reloaded Zellij plugin");
+  expect(result.stdout).not.toContain("Zellij reload failed");
 });
 
 test("self-update installs selected channel CLI to local bin", () => {
@@ -265,13 +291,13 @@ function writePiArchive(release: string): void {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
 }
 
-function runCli(args: string[], home: string, config: string, release: string, version = "0.0.1") {
+function runCli(args: string[], home: string, config: string, release: string, version = "0.0.1", pathPrefix?: string) {
   return spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
     env: {
       ...process.env,
       HOME: home,
-      PATH: "/usr/bin:/bin",
+      PATH: pathPrefix ? `${pathPrefix}:/usr/bin:/bin` : "/usr/bin:/bin",
       XDG_CONFIG_HOME: config,
       AGENT_THREADS_RELEASE_DIR: release,
       AGENT_THREADS_VERSION: version,
