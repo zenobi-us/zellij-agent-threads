@@ -5,7 +5,6 @@ import type { LogService } from "./log.js";
 
 export const PIPE_NAME = "agenthreads:refresh";
 export const STORE_COMMAND = "agent-threads";
-export const DEFAULT_PLUGIN_ALIAS = "agent-threads";
 export const REFRESH_MS = 2_000;
 export const COMMAND_TIMEOUT_MS = 3_000;
 
@@ -33,8 +32,8 @@ type PublisherState = {
 };
 
 /**
- * Owns every Zellij-facing side effect: pipe payloads, pane metadata lookup,
- * heartbeat refreshes, and debug logging.
+ * Owns every Zellij-facing side effect: store writes, pane metadata lookup,
+ * heartbeat refreshes, refresh pipes, and debug logging.
  *
  * Keeping this isolated makes Pi event hooks pure orchestration: they update
  * lifecycle/tool state, then ask this class to publish the current snapshot.
@@ -48,7 +47,6 @@ export class ZellijPublisher {
   constructor(
     private statusWidget: StatusWidget,
     private log: LogService,
-    private pluginAlias = DEFAULT_PLUGIN_ALIAS,
     private state: PublisherState = { state: "idle" },
   ) {}
 
@@ -60,19 +58,13 @@ export class ZellijPublisher {
     this.statusWidget = statusWidget;
   }
 
-  updatePluginAlias(pluginAlias: string): void {
-    this.pluginAlias = pluginAlias;
-  }
-
-
   /**
-   * Gives lifecycle hooks one place to mutate publishable state before any pipe
-   * write. This avoids passing tool/lifecycle data through every method call.
+   * Gives lifecycle hooks one place to mutate publishable state before any
+   * store write. This avoids passing tool/lifecycle data through every method call.
    */
   update(values: Partial<PublisherState>): void {
     this.state = { ...this.state, ...values };
   }
-
 
   /**
    * Writes the current Pi Agent Report to the singleton store. The Zellij pipe is
@@ -122,7 +114,7 @@ export class ZellijPublisher {
         updated_at: Date.now(),
       });
 
-      await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${zellijSession} pane=${paneId} state=${state.state} plugin=${this.pluginAlias} bytes=${payload.length}`);
+      await this.log.trace(`publish agent=${agentId} session_name=${sessionName ?? "?"} zellij=${zellijSession} pane=${paneId} state=${state.state} bytes=${payload.length}`);
       await this.writeToStore(payload, agentId, state.state);
       await this.wakePlugin();
       this.lastError = undefined;
@@ -131,7 +123,7 @@ export class ZellijPublisher {
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       if (updateStatus) this.statusWidget.update(ctx, "");
-      await this.log.trace(`pipe error state=${state.state} error=${this.lastError}`);
+      await this.log.trace(`publish error state=${state.state} error=${this.lastError}`);
     }
   }
 

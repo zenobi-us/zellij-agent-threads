@@ -23,7 +23,7 @@ const STATUS_KEY = "zellij-agent";
  *   │
  *   ├─ tool_execution_start/end ──► ZellijPublisher.update(tool)
  *   │        │
- *   │        └─► ZellijPublisher.publish ──► zellij pipe ──► WASM plugin UI
+ *   │        └─► ZellijPublisher.publish ──► agent-threads store ──► WASM plugin UI
  *   │
  *   └─ zellij-agent-publish command ──► manual publish + diagnostic toast
  * ```
@@ -49,7 +49,6 @@ export default function (pi: ExtensionAPI) {
     void log.debug(`session_start cwd=${ctx.cwd}`);
     statusWidget = new StatusWidget(STATUS_KEY, config.statusBarTemplate);
     publisher.updateStatusWidget(statusWidget);
-    publisher.updatePluginAlias(config.pluginAlias);
     publisher.scheduleRefresh(ctx);
     void publisher.publish(ctx, "idle");
   });
