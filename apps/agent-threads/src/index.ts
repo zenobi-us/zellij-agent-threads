@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { install, selfUpdate } from "./installer.js";
 import { AgentStore, defaultStorePath, parseReportJson } from "./store.js";
 
 export type CliIo = {
@@ -9,17 +10,23 @@ export type CliIo = {
   stderr?: (chunk: string) => void;
 };
 
-export function runAgentThreads({
+export async function runAgentThreads({
   argv,
   env = process.env,
   stdout = (chunk) => process.stdout.write(chunk),
   stderr = (chunk) => process.stderr.write(chunk),
-}: CliIo): number {
+}: CliIo): Promise<number> {
   try {
     const { command, flags } = parseArgs(argv);
-    if (command === "help" || command === undefined) {
-      writeLine(stdout, usageText());
-      return 0;
+    switch (command) {
+      case "install":
+        return await install({ harness: flags.harness, yes: flags.yes === "true", noReload: flags["no-reload"] === "true", env });
+      case "self-update":
+        return await selfUpdate({ channel: flags.channel, env });
+      case "help":
+      case undefined:
+        writeLine(stdout, usageText());
+        return 0;
     }
 
     const store = new AgentStore(flags.db ?? env.AGENT_THREADS_DB ?? defaultStorePath(env));
@@ -73,12 +80,13 @@ type ParsedArgs = {
 function parseArgs(argv: string[]): ParsedArgs {
   const [command, ...rest] = argv;
   const flags: Record<string, string> = {};
+  const booleanFlags = new Set(["json", "yes", "no-reload"]);
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index]!;
     if (!arg.startsWith("--")) throw new Error(`unexpected argument: ${arg}`);
     const name = arg.slice(2);
-    if (name === "json" && (rest[index + 1] === undefined || rest[index + 1]!.startsWith("--"))) {
-      flags.json = "true";
+    if (booleanFlags.has(name) && (rest[index + 1] === undefined || rest[index + 1]!.startsWith("--"))) {
+      flags[name] = "true";
       continue;
     }
     const value = rest[index + 1];
@@ -104,9 +112,11 @@ function usageText(): string {
   agent-threads upsert --json '<AgentReportV2>' [--db path]
   agent-threads delete --agent-id '<id>' [--db path]
   agent-threads snapshot --json [--db path]
-  agent-threads gc [--json] [--db path]`;
+  agent-threads gc [--json] [--db path]
+  agent-threads install [--harness pi] [--yes] [--no-reload]
+  agent-threads self-update [--channel stable|prerelease]`;
 }
 
 if (import.meta.main) {
-  process.exit(runAgentThreads({ argv: process.argv.slice(2) }));
+  process.exit(await runAgentThreads({ argv: process.argv.slice(2) }));
 }

@@ -19,9 +19,24 @@ tasks:
       - "src/**/*.ts"
 
   build:
+    type: run
     deps:
       - "~:typecheck"
-    command: "noop"
+    inputs:
+      - "package.json"
+      - "src/**/*.ts"
+    outputs:
+      - "dist/agent-threads-*"
+    options:
+      runInCI: true
+    script: |
+      set -euo pipefail
+      platform="$(bun -e 'console.log(process.platform)')"
+      arch="$(bun -e 'console.log(process.arch)')"
+      ext=""
+      if [ "$platform" = "win32" ]; then ext=".exe"; fi
+      mkdir -p dist
+      bun build ./src/index.ts --compile --target "bun-${platform}-${arch}" --outfile "dist/agent-threads-${platform}-${arch}${ext}"
 
   lint:
     deps:
@@ -45,3 +60,27 @@ tasks:
     options:
       cache: false
       runInCI: false
+
+  publish:
+    type: run
+    deps:
+      - "~:build"
+    inputs:
+      - "dist/agent-threads-*"
+    options:
+      cache: false
+      runInCI: true
+    script: |
+      set -euo pipefail
+
+      repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+      tag="${PUBLISH_RELEASE_TAG:?PUBLISH_RELEASE_TAG is required}"
+
+      gh release view "$tag" --repo "$repo" >/dev/null
+      uploaded=0
+      for asset in dist/agent-threads-*; do
+        test -f "$asset" || continue
+        gh release upload "$tag" "$asset#$(basename "$asset")" --repo "$repo" --clobber
+        uploaded=$((uploaded + 1))
+      done
+      test "$uploaded" -gt 0

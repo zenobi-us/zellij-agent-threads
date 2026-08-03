@@ -1,14 +1,170 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { cliAssetName } from "./installer.js";
 import { runAgentThreads } from "./index.js";
 import type { AgentReportV2 } from "./store.js";
 
 const dirs: string[] = [];
+const cli = join(import.meta.dir, "index.ts");
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+test("CLI seam runs commands with controlled argv, env, and output", async () => {
+  const db = tempDb();
+  const env = { AGENT_THREADS_DB: db };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const io = { env, stdout: stdout.push.bind(stdout), stderr: stderr.push.bind(stderr), stdin: "" };
+
+  expect(await runAgentThreads({ argv: ["upsert", "--json", JSON.stringify(report("a"))], ...io })).toBe(0);
+  expect(await runAgentThreads({ argv: ["snapshot", "--json"], ...io })).toBe(0);
+  expect(await runAgentThreads({ argv: ["delete", "--agent-id", "a"], ...io })).toBe(0);
+  expect(await runAgentThreads({ argv: ["gc", "--json"], ...io })).toBe(0);
+  expect(await runAgentThreads({ argv: ["snapshot", "--json"], ...io })).toBe(0);
+  expect(stderr.join("")).toBe("");
+
+  const lines = stdout.join("").trim().split("\n");
+  expect((JSON.parse(lines[0]!) as { agents: AgentReportV2[] }).agents.map((agent) => agent.agent_id)).toEqual(["a"]);
+  expect(JSON.parse(lines[1]!)).toEqual({ removed: 0 });
+  expect((JSON.parse(lines[2]!) as { agents: AgentReportV2[] }).agents).toEqual([]);
+});
+
+test("CLI seam reports errors without exiting the test process", async () => {
+  const stderr: string[] = [];
+
+  expect(await runAgentThreads({ argv: ["nope"], stdout: () => {}, stderr: stderr.push.bind(stderr) })).toBe(1);
+  expect(stderr.join("")).toContain("unknown command: nope");
+  expect(stderr.join("")).toContain("agent-threads upsert");
+});
+
+test("install copies same-version plugin and detected Pi extension", () => {
+  const { home, config, release } = fixture({ pi: true, version: "9.8.7" });
+
+  const result = runCli(["install", "--no-reload"], home, config, release, "9.8.7");
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("release: agent-threads-v9.8.7");
+  expect(readFileSync(join(config, "zellij", "plugins", "agent-threads.wasm"), "utf8")).toBe("wasm");
+  expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
+  expect(result.stdout).toContain("Add this Zellij plugin alias");
+});
+
+test("install skips Pi extension when Pi is not detected", () => {
+  const { home, config, release } = fixture({ pi: false });
+
+  const result = runCli(["install", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(existsSync(join(config, "zellij", "plugins", "agent-threads.wasm"))).toBe(true);
+  expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread"))).toBe(false);
+  expect(result.stdout).toContain("pi not detected; skipped pi extension");
+  expect(result.stdout).toContain("pi integration docs: https://github.com/zenobi-us/zellij-agent-threads/blob/main/docs/harness-integration.md");
+});
+
+test("install prints generic contract for unsupported harness", () => {
+  const { home, config, release } = fixture({ pi: false });
+
+  const result = runCli(["install", "--harness", "ghost", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("unsupported harness: ghost");
+  expect(result.stdout).toContain("agent-threads upsert --json '<AgentReportV2>'");
+  expect(result.stdout).toContain("agent-threads delete --agent-id '<id>'");
+  expect(result.stdout).toContain("agent-threads snapshot --json");
+  expect(result.stdout).toContain("docs/harness-integration.md");
+});
+
+test("interactive install edits Zellij config when accepted", () => {
+  const { home, config, release } = fixture({ pi: false });
+
+  const result = runCliInteractive(["install", "--no-reload"], home, config, release, "y\n");
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Edit Zellij config");
+  expect(readFileSync(join(config, "zellij", "config.kdl"), "utf8")).toContain("agent-threads");
+});
+
+test("interactive install leaves Zellij config unchanged when rejected", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const configPath = join(config, "zellij", "config.kdl");
+  mkdirSync(join(config, "zellij"), { recursive: true });
+  writeFileSync(configPath, "plugins {\n}\n");
+
+  const result = runCliInteractive(["install", "--no-reload"], home, config, release, "n\n");
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(configPath, "utf8")).toBe("plugins {\n}\n");
+  expect(result.stdout).toContain("Skipped Zellij config edit");
+});
+
+test("config edit creates a backup before write", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const configPath = join(config, "zellij", "config.kdl");
+  const oldConfig = "plugins {\n    compact-bar location=\"zellij:compact-bar\"\n}\n";
+  mkdirSync(join(config, "zellij"), { recursive: true });
+  writeFileSync(configPath, oldConfig);
+
+  const result = runCli(["install", "--yes", "--no-reload"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(`${configPath}.bak`, "utf8")).toBe(oldConfig);
+  expect(readFileSync(configPath, "utf8")).toContain("agent-threads");
+});
+
+test("config edit mutates an existing plugins KDL node", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const configPath = join(config, "zellij", "config.kdl");
+  mkdirSync(join(config, "zellij"), { recursive: true });
+  writeFileSync(configPath, "plugins {\n    compact-bar location=\"zellij:compact-bar\"\n}\n");
+
+  const result = runCli(["install", "--yes", "--no-reload"], home, config, release);
+  const updated = readFileSync(configPath, "utf8");
+
+  expect(result.status).toBe(0);
+  expect(updated).toContain("compact-bar");
+  expect(updated).toContain("agent-threads");
+  expect(updated).toContain(`file:${join(config, "zellij", "plugins", "agent-threads.wasm")}`);
+  expect(result.stdout).not.toContain("conservative append");
+});
+
+test("install warns when best-effort Zellij reload fails", () => {
+  const { home, config, release } = fixture({ pi: false });
+
+  const result = runCli(["install"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Zellij reload failed; files still installed");
+});
+
+test("self-update installs selected channel CLI to local bin", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const asset = cliAssetName(process.platform, process.arch);
+  writeFileSync(join(release, asset), "binary");
+  chmodSync(join(release, asset), 0o755);
+
+  const result = runCli(["self-update", "--channel", "prerelease"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("channel: prerelease");
+  expect(readFileSync(join(home, ".local", "bin", "agent-threads"), "utf8")).toBe("binary");
+});
+
+test("self-update defaults to the stable channel", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const asset = cliAssetName(process.platform, process.arch);
+  writeFileSync(join(release, asset), "stable-binary");
+  chmodSync(join(release, asset), 0o755);
+
+  const result = runCli(["self-update"], home, config, release);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("channel: stable");
+  expect(readFileSync(join(home, ".local", "bin", "agent-threads"), "utf8")).toBe("stable-binary");
 });
 
 function tempDb(): string {
@@ -30,30 +186,57 @@ function report(agentId: string): AgentReportV2 {
   };
 }
 
-test("CLI seam runs commands with controlled argv, env, and output", () => {
-  const db = tempDb();
-  const env = { AGENT_THREADS_DB: db };
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-  const io = { env, stdout: stdout.push.bind(stdout), stderr: stderr.push.bind(stderr), stdin: "" };
+function fixture(options: { pi: boolean; version?: string }) {
+  const root = mkdtempSync(join(tmpdir(), "agent-threads-cli-test-"));
+  dirs.push(root);
+  const home = join(root, "home");
+  const config = join(root, "config");
+  const release = join(root, "release");
+  mkdirSync(release, { recursive: true });
+  mkdirSync(config, { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(release, "zellij-plugin-agent-threads.wasm"), "wasm");
+  writePiArchive(release);
+  if (options.pi) mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+  return { home, config, release, version: options.version ?? "0.0.1" };
+}
 
-  expect(runAgentThreads({ argv: ["upsert", "--json", JSON.stringify(report("a"))], ...io })).toBe(0);
-  expect(runAgentThreads({ argv: ["snapshot", "--json"], ...io })).toBe(0);
-  expect(runAgentThreads({ argv: ["delete", "--agent-id", "a"], ...io })).toBe(0);
-  expect(runAgentThreads({ argv: ["gc", "--json"], ...io })).toBe(0);
-  expect(runAgentThreads({ argv: ["snapshot", "--json"], ...io })).toBe(0);
-  expect(stderr.join("")).toBe("");
+function writePiArchive(release: string): void {
+  const payload = join(release, "pi-payload");
+  mkdirSync(join(payload, "src"), { recursive: true });
+  writeFileSync(join(payload, "package.json"), '{"name":"pi-agenthread"}\n');
+  writeFileSync(join(payload, "src", "index.ts"), "export {};\n");
+  const result = spawnSync("tar", ["-czf", join(release, "pi-agenthread.tar.gz"), "-C", payload, "."], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+}
 
-  const lines = stdout.join("").trim().split("\n");
-  expect((JSON.parse(lines[0]!) as { agents: AgentReportV2[] }).agents.map((agent) => agent.agent_id)).toEqual(["a"]);
-  expect(JSON.parse(lines[1]!)).toEqual({ removed: 0 });
-  expect((JSON.parse(lines[2]!) as { agents: AgentReportV2[] }).agents).toEqual([]);
-});
+function runCli(args: string[], home: string, config: string, release: string, version = "0.0.1") {
+  return spawnSync(process.execPath, [cli, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: "/usr/bin:/bin",
+      XDG_CONFIG_HOME: config,
+      AGENT_THREADS_RELEASE_DIR: release,
+      AGENT_THREADS_VERSION: version,
+      AGENT_THREADS_NONINTERACTIVE: "1",
+    },
+  });
+}
 
-test("CLI seam reports errors without exiting the test process", () => {
-  const stderr: string[] = [];
-
-  expect(runAgentThreads({ argv: ["nope"], stdout: () => {}, stderr: stderr.push.bind(stderr) })).toBe(1);
-  expect(stderr.join("")).toContain("unknown command: nope");
-  expect(stderr.join("")).toContain("agent-threads upsert");
-});
+function runCliInteractive(args: string[], home: string, config: string, release: string, input: string, version = "0.0.1") {
+  return spawnSync(process.execPath, [cli, ...args], {
+    encoding: "utf8",
+    input,
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: "/usr/bin:/bin",
+      XDG_CONFIG_HOME: config,
+      AGENT_THREADS_RELEASE_DIR: release,
+      AGENT_THREADS_VERSION: version,
+      AGENT_THREADS_FORCE_INTERACTIVE: "1",
+    },
+  });
+}
