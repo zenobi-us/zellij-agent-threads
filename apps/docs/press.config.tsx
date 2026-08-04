@@ -47,6 +47,7 @@ export default defineConfig({
   },
   mode: "static",
   site: {
+    baseUrl: "https://zenobi-us.github.io/zellij-agent-threads/",
     name: "Zellij Agent Threads",
     git: {
       repo: "zellij-agent-threads",

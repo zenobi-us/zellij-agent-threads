@@ -7,6 +7,7 @@ import { Section } from "../components/Section";
 import { Logo } from "../components/Logo";
 import { ReleaseVersion } from "../components/ReleaseVersion";
 import { ZellijTerminalPreview } from "../components/ZellijTerminalPreview";
+import { Link } from "fumapress/client";
 
 export default function Page() {
   return (
@@ -24,7 +25,7 @@ export default function Page() {
         >
           <HeroActions>
             <HeroAction primary asChild>
-              <a href="/quickstart">Get started</a>
+              <Link href="/quickstart">Get started</Link>
             </HeroAction>
             <HeroAction asChild>
               <a
