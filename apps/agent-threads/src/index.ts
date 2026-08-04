@@ -20,7 +20,7 @@ export async function runAgentThreads({
     const { command, flags } = parseArgs(argv);
     switch (command) {
       case "install":
-        return await install({ harness: flags.harness, yes: flags.yes === "true", noReload: flags["no-reload"] === "true", env });
+        return await install({ harness: flags.harness, env });
       case "self-update":
         return await selfUpdate({ channel: flags.channel, env });
       case "help":
@@ -80,7 +80,7 @@ type ParsedArgs = {
 function parseArgs(argv: string[]): ParsedArgs {
   const [command, ...rest] = argv;
   const flags: Record<string, string> = {};
-  const booleanFlags = new Set(["json", "yes", "no-reload"]);
+  const booleanFlags = new Set(["json"]);
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index]!;
     if (!arg.startsWith("--")) throw new Error(`unexpected argument: ${arg}`);
@@ -113,7 +113,7 @@ function usageText(): string {
   agent-threads delete --agent-id '<id>' [--db path]
   agent-threads snapshot --json [--db path]
   agent-threads gc [--json] [--db path]
-  agent-threads install [--harness pi] [--yes] [--no-reload]
+  agent-threads install [--harness pi]
   agent-threads self-update [--channel stable|prerelease]`;
 }
 

@@ -14,15 +14,19 @@ const DOCS_URL = "https://github.com/zenobi-us/zellij-agent-threads/blob/main/do
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+declare const AGENT_THREADS_BUILD_VERSION: string | undefined;
+
 type GithubReleaseAsset = {
   name?: string;
   browser_download_url?: string;
 };
 
+class MissingReleaseError extends Error {}
+
+class MissingReleaseAssetError extends Error {}
+
 export type InstallOptions = {
   harness?: string;
-  yes?: boolean;
-  noReload?: boolean;
   env?: NodeJS.ProcessEnv;
 };
 
@@ -34,6 +38,7 @@ export type SelfUpdateOptions = {
 type HarnessManifest = {
   name: string;
   assetName: string;
+  releaseTagPrefix: string;
   installPath: string;
   detection: { homePath: string; command: string };
   docsUrl: string;
@@ -43,6 +48,7 @@ const HARNESSES: HarnessManifest[] = [
   {
     name: "pi",
     assetName: PI_ASSET,
+    releaseTagPrefix: "pi-extension-v",
     installPath: ".pi/agent/extensions/pi-agenthread",
     detection: { homePath: ".pi/agent", command: "pi" },
     docsUrl: DOCS_URL,
@@ -56,17 +62,23 @@ export async function install(options: InstallOptions = {}): Promise<number> {
   const completed: string[] = [];
   const warnings: string[] = [];
   const nextSteps: string[] = [];
+  const wanted = options.harness ? [options.harness] : HARNESSES.map((harness) => harness.name);
 
   console.log(`Plan:`);
   console.log(`- release: ${tag}`);
   console.log(`- zellij plugin: ${zellijPluginPath(env)}`);
+  console.log(`- zellij config: ${zellijConfigPath(env)}`);
+  console.log(`- zellij config backup: ${zellijConfigPath(env)}.bak`);
   console.log(`- harnesses: ${options.harness ?? "all supported"}`);
+  for (const name of wanted) {
+    const harness = HARNESSES.find((item) => item.name === name);
+    if (harness) console.log(`- ${harness.name} extension: ${installDir(harness, env)}`);
+  }
 
-  const pluginAsset = await getReleaseAsset(PLUGIN_ASSET, tag, env);
+  const pluginAsset = await getReleaseAsset(PLUGIN_ASSET, tag, env, [`zellij-plugin-v${version}`]);
   installFile(pluginAsset, zellijPluginPath(env));
   completed.push(`installed Zellij plugin to ${zellijPluginPath(env)}`);
 
-  const wanted = options.harness ? [options.harness] : HARNESSES.map((harness) => harness.name);
   for (const name of wanted) {
     const harness = HARNESSES.find((item) => item.name === name);
     if (!harness) {
@@ -79,14 +91,14 @@ export async function install(options: InstallOptions = {}): Promise<number> {
       nextSteps.push(`${harness.name} integration docs: ${harness.docsUrl}`);
       continue;
     }
-    const asset = await getReleaseAsset(harness.assetName, tag, env);
+    const asset = await getReleaseAsset(harness.assetName, tag, env, [`${harness.releaseTagPrefix}${version}`]);
     const dir = installDir(harness, env);
     installTarGz(asset, dir);
     completed.push(`installed ${harness.name} extension to ${dir}`);
   }
 
-  await handleZellijConfig(env, options.yes === true, completed, warnings, nextSteps);
-  if (!options.noReload) reloadZellijPlugin(env, completed, warnings);
+  await handleZellijConfig(env, completed, warnings, nextSteps);
+  reloadZellijPlugin(env, completed, warnings);
 
   printSummary(completed, warnings, nextSteps);
   return 0;
@@ -118,6 +130,7 @@ export function cliAssetName(platform: NodeJS.Platform, arch: string): string {
 
 function cliVersion(env: NodeJS.ProcessEnv): string {
   if (env.AGENT_THREADS_VERSION) return env.AGENT_THREADS_VERSION;
+  if (typeof AGENT_THREADS_BUILD_VERSION === "string" && AGENT_THREADS_BUILD_VERSION) return AGENT_THREADS_BUILD_VERSION;
   const packagePath = new URL("../package.json", import.meta.url);
   try {
     return JSON.parse(readFileSync(packagePath, "utf8")).version ?? "0.0.0";
@@ -126,36 +139,50 @@ function cliVersion(env: NodeJS.ProcessEnv): string {
   }
 }
 
-async function getReleaseAsset(assetName: string, tag: string, env: NodeJS.ProcessEnv): Promise<string> {
+async function getReleaseAsset(assetName: string, tag: string, env: NodeJS.ProcessEnv, fallbackTags: string[] = []): Promise<string> {
   const releaseDir = env.AGENT_THREADS_RELEASE_DIR;
   if (releaseDir) {
-    if (!existsSync(releaseDir)) throw new Error(`missing release ${tag}: ${releaseDir}`);
+    if (!existsSync(releaseDir)) throw new MissingReleaseError(`missing release ${tag}: ${releaseDir}`);
     const path = join(releaseDir, assetName);
-    if (!existsSync(path)) throw new Error(`missing release asset ${assetName} in ${tag}: ${path}`);
+    if (!existsSync(path)) throw new MissingReleaseAssetError(`missing release asset ${assetName} in ${tag}: ${path}`);
     return path;
   }
 
-  const url = await releaseAssetUrl(assetName, tag, fetch);
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`failed to download release asset ${assetName} from ${tag}: ${response.status}`);
-  const dir = mkdtempSync(join(tmpdir(), "agent-threads-release-"));
-  const tempPath = join(dir, `${assetName}.tmp`);
-  const path = join(dir, assetName);
-  writeFileSync(tempPath, Buffer.from(await response.arrayBuffer()));
-  renameSync(tempPath, path);
-  return path;
+  const tags = [tag, ...fallbackTags];
+  let firstError: unknown;
+  for (const candidate of tags) {
+    try {
+      const url = await releaseAssetUrl(assetName, candidate, fetch);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`failed to download release asset ${assetName} from ${candidate}: ${response.status}`);
+      const dir = mkdtempSync(join(tmpdir(), "agent-threads-release-"));
+      const tempPath = join(dir, `${assetName}.tmp`);
+      const path = join(dir, assetName);
+      writeFileSync(tempPath, Buffer.from(await response.arrayBuffer()));
+      renameSync(tempPath, path);
+      return path;
+    } catch (error) {
+      firstError ??= error;
+      if (!isFallbackMiss(error)) throw error;
+    }
+  }
+  throw firstError;
+}
+
+function isFallbackMiss(error: unknown): boolean {
+  return error instanceof MissingReleaseError || error instanceof MissingReleaseAssetError;
 }
 
 export async function releaseAssetUrl(assetName: string, tag: string, fetchImpl: Fetch = fetch): Promise<string> {
   const response = await fetchImpl(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, {
     headers: { accept: "application/vnd.github+json" },
   });
-  if (response.status === 404) throw new Error(`missing release ${tag} for ${REPO}`);
+  if (response.status === 404) throw new MissingReleaseError(`missing release ${tag} for ${REPO}`);
   if (!response.ok) throw new Error(`failed to resolve release ${tag}: ${response.status}`);
 
   const body = (await response.json()) as { assets?: GithubReleaseAsset[] };
   const asset = body.assets?.find((item) => item.name === assetName);
-  if (!asset) throw new Error(`missing release asset ${assetName} in ${tag}`);
+  if (!asset) throw new MissingReleaseAssetError(`missing release asset ${assetName} in ${tag}`);
   if (!asset.browser_download_url) throw new Error(`release asset ${assetName} in ${tag} has no download URL`);
   return asset.browser_download_url;
 }
@@ -215,25 +242,25 @@ function installDir(harness: HarnessManifest, env: NodeJS.ProcessEnv): string {
 
 async function handleZellijConfig(
   env: NodeJS.ProcessEnv,
-  yes: boolean,
   completed: string[],
   warnings: string[],
   nextSteps: string[],
 ): Promise<void> {
   const snippet = zellijPluginSnippet(env);
-  if (!yes && !isInteractive(env)) {
+  if (!isInteractive(env)) {
     nextSteps.push(`Add this Zellij plugin alias to ${zellijConfigPath(env)}:\n${snippet}`);
     return;
   }
 
-  if (!yes && !(await confirmConfigEdit(env))) {
+  if (!(await confirmConfigEdit(env))) {
     nextSteps.push(`Skipped Zellij config edit. Add this alias to ${zellijConfigPath(env)}:\n${snippet}`);
     return;
   }
 
   const configPath = zellijConfigPath(env);
   mkdirSync(dirname(configPath), { recursive: true });
-  const oldConfig = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
+  const hadConfig = existsSync(configPath);
+  const oldConfig = hadConfig ? readFileSync(configPath, "utf8") : "";
 
   let newConfig: string;
   try {
@@ -249,10 +276,10 @@ async function handleZellijConfig(
     return;
   }
 
-  if (oldConfig) copyFileSync(configPath, `${configPath}.bak`);
+  if (hadConfig) copyFileSync(configPath, `${configPath}.bak`);
   writeFileSync(configPath, newConfig);
   completed.push(`updated Zellij config at ${configPath}`);
-  if (oldConfig) completed.push(`backed up Zellij config to ${configPath}.bak`);
+  if (hadConfig) completed.push(`backed up Zellij config to ${configPath}.bak`);
 }
 
 function upsertZellijPluginAlias(config: string, pluginPath: string): string {

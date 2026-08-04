@@ -45,10 +45,13 @@ test("CLI seam reports errors without exiting the test process", async () => {
 test("install copies same-version plugin and detected Pi extension", () => {
   const { home, config, release } = fixture({ pi: true, version: "9.8.7" });
 
-  const result = runCli(["install", "--no-reload"], home, config, release, "9.8.7");
+  const result = runCli(["install"], home, config, release, "9.8.7");
 
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("release: agent-threads-v9.8.7");
+  expect(result.stdout).toContain(`zellij config: ${join(config, "zellij", "config.kdl")}`);
+  expect(result.stdout).toContain(`zellij config backup: ${join(config, "zellij", "config.kdl")}.bak`);
+  expect(result.stdout).toContain(`pi extension: ${join(home, ".pi", "agent", "extensions", "pi-agenthread")}`);
   expect(readFileSync(join(config, "zellij", "plugins", "agent-threads.wasm"), "utf8")).toBe("wasm");
   expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
   expect(result.stdout).toContain("Add this Zellij plugin alias");
@@ -83,7 +86,7 @@ test("install detects Pi from the pi command on PATH", () => {
   writeFileSync(join(bin, "pi"), "#!/usr/bin/env sh\nexit 0\n");
   chmodSync(join(bin, "pi"), 0o755);
 
-  const result = runCli(["install", "--no-reload"], home, config, release, "0.0.1", bin);
+  const result = runCli(["install"], home, config, release, "0.0.1", bin);
 
   expect(result.status).toBe(0);
   expect(existsSync(join(home, ".pi", "agent", "extensions", "pi-agenthread", "package.json"))).toBe(true);
@@ -95,7 +98,7 @@ test("install replaces an existing Zellij plugin file", () => {
   mkdirSync(join(config, "zellij", "plugins"), { recursive: true });
   writeFileSync(pluginPath, "old");
 
-  const result = runCli(["install", "--no-reload"], home, config, release);
+  const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(0);
   expect(readFileSync(pluginPath, "utf8")).toBe("wasm");
@@ -108,7 +111,7 @@ test("non-interactive install prints the Zellij snippet without editing config",
   mkdirSync(join(config, "zellij"), { recursive: true });
   writeFileSync(configPath, oldConfig);
 
-  const result = runCli(["install", "--no-reload"], home, config, release);
+  const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(0);
   expect(readFileSync(configPath, "utf8")).toBe(oldConfig);
@@ -120,7 +123,7 @@ test("non-interactive install prints the Zellij snippet without editing config",
 test("install skips Pi extension when Pi is not detected", () => {
   const { home, config, release } = fixture({ pi: false });
 
-  const result = runCli(["install", "--no-reload"], home, config, release);
+  const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(0);
   expect(existsSync(join(config, "zellij", "plugins", "agent-threads.wasm"))).toBe(true);
@@ -132,7 +135,7 @@ test("install skips Pi extension when Pi is not detected", () => {
 test("install prints generic contract for unsupported harness", () => {
   const { home, config, release } = fixture({ pi: false });
 
-  const result = runCli(["install", "--harness", "ghost", "--no-reload"], home, config, release);
+  const result = runCli(["install", "--harness", "ghost"], home, config, release);
 
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("unsupported harness: ghost");
@@ -145,7 +148,7 @@ test("install prints generic contract for unsupported harness", () => {
 test("interactive install edits Zellij config when accepted", () => {
   const { home, config, release } = fixture({ pi: false });
 
-  const result = runCliInteractive(["install", "--no-reload"], home, config, release, "y\n");
+  const result = runCliInteractive(["install"], home, config, release, "y\n");
 
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("Edit Zellij config");
@@ -158,7 +161,7 @@ test("interactive install leaves Zellij config unchanged when rejected", () => {
   mkdirSync(join(config, "zellij"), { recursive: true });
   writeFileSync(configPath, "plugins {\n}\n");
 
-  const result = runCliInteractive(["install", "--no-reload"], home, config, release, "n\n");
+  const result = runCliInteractive(["install"], home, config, release, "n\n");
 
   expect(result.status).toBe(0);
   expect(readFileSync(configPath, "utf8")).toBe("plugins {\n}\n");
@@ -172,10 +175,23 @@ test("config edit creates a backup before write", () => {
   mkdirSync(join(config, "zellij"), { recursive: true });
   writeFileSync(configPath, oldConfig);
 
-  const result = runCli(["install", "--yes", "--no-reload"], home, config, release);
+  const result = runCliInteractive(["install"], home, config, release, "y\n");
 
   expect(result.status).toBe(0);
   expect(readFileSync(`${configPath}.bak`, "utf8")).toBe(oldConfig);
+  expect(readFileSync(configPath, "utf8")).toContain("agent-threads");
+});
+
+test("config edit backs up an existing empty config before write", () => {
+  const { home, config, release } = fixture({ pi: false });
+  const configPath = join(config, "zellij", "config.kdl");
+  mkdirSync(join(config, "zellij"), { recursive: true });
+  writeFileSync(configPath, "");
+
+  const result = runCliInteractive(["install"], home, config, release, "y\n");
+
+  expect(result.status).toBe(0);
+  expect(readFileSync(`${configPath}.bak`, "utf8")).toBe("");
   expect(readFileSync(configPath, "utf8")).toContain("agent-threads");
 });
 
@@ -185,7 +201,7 @@ test("config edit mutates an existing plugins KDL node", () => {
   mkdirSync(join(config, "zellij"), { recursive: true });
   writeFileSync(configPath, "plugins {\n    compact-bar location=\"zellij:compact-bar\"\n}\n");
 
-  const result = runCli(["install", "--yes", "--no-reload"], home, config, release);
+  const result = runCliInteractive(["install"], home, config, release, "y\n");
   const updated = readFileSync(configPath, "utf8");
 
   expect(result.status).toBe(0);
@@ -311,7 +327,7 @@ test("install reports a missing local release", () => {
   const { home, config, release } = fixture({ pi: false });
   rmSync(release, { recursive: true, force: true });
 
-  const result = runCli(["install", "--no-reload"], home, config, release);
+  const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("missing release agent-threads-v0.0.1");
@@ -321,7 +337,7 @@ test("install reports a missing local asset", () => {
   const { home, config, release } = fixture({ pi: false });
   rmSync(join(release, "agent-threads.wasm"), { force: true });
 
-  const result = runCli(["install", "--no-reload"], home, config, release);
+  const result = runCli(["install"], home, config, release);
 
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("missing release asset agent-threads.wasm in agent-threads-v0.0.1");
@@ -371,12 +387,13 @@ function writePiArchive(release: string): void {
 }
 
 function runCli(args: string[], home: string, config: string, release: string, version = "0.0.1", pathPrefix?: string) {
+  const path = testPath(home, pathPrefix);
   return spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
     env: {
       ...process.env,
       HOME: home,
-      PATH: pathPrefix ? `${pathPrefix}:/usr/bin:/bin` : "/usr/bin:/bin",
+      PATH: path,
       XDG_CONFIG_HOME: config,
       AGENT_THREADS_RELEASE_DIR: release,
       AGENT_THREADS_VERSION: version,
@@ -386,17 +403,29 @@ function runCli(args: string[], home: string, config: string, release: string, v
 }
 
 function runCliInteractive(args: string[], home: string, config: string, release: string, input: string, version = "0.0.1") {
+  const path = testPath(home);
   return spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
     input,
     env: {
       ...process.env,
       HOME: home,
-      PATH: "/usr/bin:/bin",
+      PATH: path,
       XDG_CONFIG_HOME: config,
       AGENT_THREADS_RELEASE_DIR: release,
       AGENT_THREADS_VERSION: version,
       AGENT_THREADS_FORCE_INTERACTIVE: "1",
     },
   });
+}
+
+function testPath(home: string, pathPrefix?: string): string {
+  const bin = join(home, ".agent-threads-test-bin");
+  mkdirSync(bin, { recursive: true });
+  const zellij = join(bin, "zellij");
+  if (!existsSync(zellij)) {
+    writeFileSync(zellij, "#!/usr/bin/env sh\nexit 1\n");
+    chmodSync(zellij, 0o755);
+  }
+  return pathPrefix ? `${pathPrefix}:${bin}:/usr/bin:/bin` : `${bin}:/usr/bin:/bin`;
 }

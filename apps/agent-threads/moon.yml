@@ -35,16 +35,22 @@ tasks:
       runInCI: true
     script: |
       set -euo pipefail
+      version="$(bun -p "require('./package.json').version")"
       mkdir -p dist
       bun build ./src/index.ts --compile --target=bun-linux-x64 \
+        --define "AGENT_THREADS_BUILD_VERSION=\"${version}\"" \
         --outfile=dist/agent-threads-linux-x64
       bun build ./src/index.ts --compile --target=bun-linux-arm64 \
+        --define "AGENT_THREADS_BUILD_VERSION=\"${version}\"" \
         --outfile=dist/agent-threads-linux-arm64
       bun build ./src/index.ts --compile --target=bun-darwin-x64 \
+        --define "AGENT_THREADS_BUILD_VERSION=\"${version}\"" \
         --outfile=dist/agent-threads-darwin-x64
       bun build ./src/index.ts --compile --target=bun-darwin-arm64 \
+        --define "AGENT_THREADS_BUILD_VERSION=\"${version}\"" \
         --outfile=dist/agent-threads-darwin-arm64
       bun build ./src/index.ts --compile --target=bun-windows-x64 \
+        --define "AGENT_THREADS_BUILD_VERSION=\"${version}\"" \
         --outfile=dist/agent-threads-windows-x64.exe
 
   lint:
