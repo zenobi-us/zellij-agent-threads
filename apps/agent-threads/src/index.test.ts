@@ -343,6 +343,20 @@ test("install reports a missing local asset", () => {
   expect(result.stderr).toContain("missing release asset agent-threads.wasm in agent-threads-v0.0.1");
 });
 
+test("invalid Pi archive fails before replacing existing extension", () => {
+  const { home, config, release } = fixture({ pi: true });
+  const extension = join(home, ".pi", "agent", "extensions", "pi-agenthread");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(join(extension, "package.json"), "old");
+  writeArchiveWithoutPackage(release);
+
+  const result = runCli(["install"], home, config, release);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("invalid pi extension archive: missing package.json");
+  expect(readFileSync(join(extension, "package.json"), "utf8")).toBe("old");
+});
+
 function tempDb(): string {
   const dir = mkdtempSync(join(tmpdir(), "agent-threads-cli-test-"));
   dirs.push(dir);
@@ -381,6 +395,14 @@ function writePiArchive(release: string): void {
   const payload = join(release, "pi-payload");
   mkdirSync(join(payload, "src"), { recursive: true });
   writeFileSync(join(payload, "package.json"), '{"name":"pi-agenthread"}\n');
+  writeFileSync(join(payload, "src", "index.ts"), "export {};\n");
+  const result = spawnSync("tar", ["-czf", join(release, "pi-agenthread.tar.gz"), "-C", payload, "."], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+}
+
+function writeArchiveWithoutPackage(release: string): void {
+  const payload = join(release, "bad-pi-payload");
+  mkdirSync(join(payload, "src"), { recursive: true });
   writeFileSync(join(payload, "src", "index.ts"), "export {};\n");
   const result = spawnSync("tar", ["-czf", join(release, "pi-agenthread.tar.gz"), "-C", payload, "."], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);

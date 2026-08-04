@@ -38,7 +38,6 @@ export type SelfUpdateOptions = {
 type HarnessManifest = {
   name: string;
   assetName: string;
-  releaseTagPrefix: string;
   installPath: string;
   detection: { homePath: string; command: string };
   docsUrl: string;
@@ -48,7 +47,6 @@ const HARNESSES: HarnessManifest[] = [
   {
     name: "pi",
     assetName: PI_ASSET,
-    releaseTagPrefix: "pi-extension-v",
     installPath: ".pi/agent/extensions/pi-agenthread",
     detection: { homePath: ".pi/agent", command: "pi" },
     docsUrl: DOCS_URL,
@@ -75,7 +73,7 @@ export async function install(options: InstallOptions = {}): Promise<number> {
     if (harness) console.log(`- ${harness.name} extension: ${installDir(harness, env)}`);
   }
 
-  const pluginAsset = await getReleaseAsset(PLUGIN_ASSET, tag, env, [`zellij-plugin-v${version}`]);
+  const pluginAsset = await getReleaseAsset(PLUGIN_ASSET, tag, env);
   installFile(pluginAsset, zellijPluginPath(env));
   completed.push(`installed Zellij plugin to ${zellijPluginPath(env)}`);
 
@@ -91,9 +89,9 @@ export async function install(options: InstallOptions = {}): Promise<number> {
       nextSteps.push(`${harness.name} integration docs: ${harness.docsUrl}`);
       continue;
     }
-    const asset = await getReleaseAsset(harness.assetName, tag, env, [`${harness.releaseTagPrefix}${version}`]);
+    const asset = await getReleaseAsset(harness.assetName, tag, env);
     const dir = installDir(harness, env);
-    installTarGz(asset, dir);
+    installTarGz(asset, dir, validatePiExtension);
     completed.push(`installed ${harness.name} extension to ${dir}`);
   }
 
@@ -200,16 +198,21 @@ function installFile(source: string, dest: string, mode?: number): void {
   }
 }
 
-function installTarGz(archive: string, dest: string): void {
+function installTarGz(archive: string, dest: string, validate?: (dir: string) => void): void {
   mkdirSync(dirname(dest), { recursive: true });
   const temp = mkdtempSync(join(dirname(dest), `.${basename(dest)}-`));
   try {
     extractTarGz(archive, temp);
+    validate?.(temp);
     replacePath(temp, dest);
   } catch (error) {
     rmSync(temp, { recursive: true, force: true });
     throw error;
   }
+}
+
+function validatePiExtension(dir: string): void {
+  if (!existsSync(join(dir, "package.json"))) throw new Error("invalid pi extension archive: missing package.json");
 }
 
 function replacePath(source: string, dest: string): void {
