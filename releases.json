@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-08-04T23:35:29.366Z",
+  "generatedAt": "2026-08-05T04:00:15.959Z",
   "repository": "zenobi-us/zellij-agent-threads",
   "ref": "refs/heads/main",
-  "sha": "5518dd629d9ef441e1b06c17ba33e49de5673165",
+  "sha": "12e67971800ca93fc6c69ed10db1d8d14ec64d00",
   "channel": "next",
   "packages": [
     {
@@ -15,7 +15,7 @@
       "path": "apps/docs",
       "name": "@zellij-agent-threads/docs",
       "version": "0.0.1",
-      "sha": "5518dd629d9ef441e1b06c17ba33e49de5673165"
+      "sha": "7a3569870e66050726f2eb319f71d7b65f5ef382"
     },
     {
       "path": "pkgs/plugins/pi-extension",
@@ -27,7 +27,7 @@
       "path": "pkgs/plugins/zellij-plugin",
       "name": "zellij-plugin-agent-threads",
       "version": "0.1.0",
-      "sha": "4defd11035671c0bd440632c4c46816fd35386c9"
+      "sha": "12e67971800ca93fc6c69ed10db1d8d14ec64d00"
     }
   ]
 }

@@ -1,275 +1,893 @@
+# Generic harness setup (/harness-setup)
+
+
+
+# Generic harness setup [#generic-harness-setup]
+
+Use this page when a harness can run hook commands and pass session data to those commands.
+
+The hook command writes an Agent Report to the `agent-threads` CLI. The CLI writes to the SQLite store. The Zellij plugin reads the store.
+
+## Event contract [#event-contract]
+
+Map harness events to these CLI commands.
+
+| Harness event           | When to run it                                           | CLI command                                     | Best payload                                                                                                             |
+| ----------------------- | -------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Session start or resume | The harness starts or resumes a session.                 | `agent-threads upsert --json '<AgentReportV2>'` | `state: "idle"`, `activity: "settled"`, session fields, pane fields, `updated_at`                                        |
+| User prompt submit      | The user submits a prompt.                               | `agent-threads upsert --json '<AgentReportV2>'` | `state: "running"`, `activity: "thinking"`, prompt session fields, `updated_at`                                          |
+| Agent turn start        | The model starts work.                                   | `agent-threads upsert --json '<AgentReportV2>'` | `state: "running"`, `activity: "thinking"`, `sequence`, `updated_at`                                                     |
+| Tool start              | The model starts a tool call.                            | `agent-threads upsert --json '<AgentReportV2>'` | `state: "running"`, `activity: "tool_running"`, `current_tool`, `current_tool_kind: "tool"`, `last_tool`, `last_tool_at` |
+| User question start     | The model asks the user for input.                       | `agent-threads upsert --json '<AgentReportV2>'` | `state: "running"`, `activity: "waiting_for_user"`, `current_tool`, `current_tool_kind: "user_question"`                 |
+| Tool end                | A tool call exits.                                       | `agent-threads upsert --json '<AgentReportV2>'` | `state: "running"`, `activity: "thinking"`, clear `current_tool`, keep `last_tool` and `last_tool_at`                    |
+| Agent turn end          | The model finishes, fails, or is aborted.                | `agent-threads upsert --json '<AgentReportV2>'` | `state: "idle"`, `activity: "settled"`, `settled_reason`, `settled_message` if available                                 |
+| Heartbeat               | No event fires for 5 seconds while the session is alive. | `agent-threads upsert --json '<AgentReportV2>'` | Repeat the last known payload with a new `sequence` and `updated_at`                                                     |
+| Session end             | The harness exits or replaces the session.               | `agent-threads delete --agent-id '<id>'`        | No JSON payload                                                                                                          |
+
+Each upsert renews a 10-second lease. Send a heartbeat every 5 seconds while the Agent can still be shown.
+
+If the harness can send events out of order, include `sequence`. Increase it by 1 for each report from the same Agent.
+
+## `agent-threads upsert` [#agent-threads-upsert]
+
+Writes or replaces one active Agent row.
+
+```sh
+agent-threads upsert --json '<AgentReportV2>'
+```
+
+The command reads one JSON object.
+
+```json
+{
+  "version": 2,
+  "harness": "example-harness",
+  "agent_id": "example:work:42",
+  "session_name": "session-123",
+  "cwd": "/home/you/project",
+  "zellij_session": "work",
+  "pane_id": "42",
+  "tab_id": 1,
+  "tab_name": "agents",
+  "state": "running",
+  "activity": "tool_running",
+  "model": "model-name",
+  "title": "agent title",
+  "current_tool": "bash",
+  "current_tool_kind": "tool",
+  "last_tool": "bash",
+  "last_tool_at": 1730000000000,
+  "settled_reason": "finished",
+  "settled_message": "done",
+  "sequence": 12,
+  "updated_at": 1730000000000
+}
+```
+
+### Agent Report v2 fields [#agent-report-v2-fields]
+
+| Field               | Type                                                      | Required | Use                                                       |
+| ------------------- | --------------------------------------------------------- | -------- | --------------------------------------------------------- |
+| `version`           | `2`                                                       | yes      | Protocol version.                                         |
+| `harness`           | string                                                    | no       | Harness name, for example `claude-code` or `codex`.       |
+| `agent_id`          | string                                                    | yes      | Stable Agent identity. Use the Zellij pane when possible. |
+| `session_name`      | string                                                    | no       | Harness session name or transcript name.                  |
+| `cwd`               | string                                                    | yes      | Current working directory.                                |
+| `zellij_session`    | string                                                    | no       | `$ZELLIJ_SESSION_NAME` when the hook runs inside Zellij.  |
+| `pane_id`           | string                                                    | no       | `$ZELLIJ_PANE_ID` when the hook runs inside Zellij.       |
+| `tab_id`            | number                                                    | no       | Native Zellij tab ID when the harness can read it.        |
+| `tab_name`          | string                                                    | no       | Native Zellij tab name when the harness can read it.      |
+| `state`             | `idle`, `running`, `shutdown`                             | yes      | Agent lifecycle state.                                    |
+| `activity`          | `thinking`, `tool_running`, `waiting_for_user`, `settled` | no       | More precise activity for the row.                        |
+| `model`             | string                                                    | no       | Active model name when the harness exposes it.            |
+| `title`             | string                                                    | no       | Short title for the row. Prefer the pane title.           |
+| `current_tool`      | string                                                    | no       | Tool that is running now.                                 |
+| `current_tool_kind` | `tool`, `user_question`                                   | no       | Type of the running tool.                                 |
+| `last_tool`         | string                                                    | no       | Last tool that started or ended.                          |
+| `last_tool_at`      | number                                                    | no       | Unix time in milliseconds for `last_tool`.                |
+| `settled_reason`    | `finished`, `failed`, `aborted`                           | no       | Result of the last turn.                                  |
+| `settled_message`   | string                                                    | no       | Short failure or abort text.                              |
+| `sequence`          | number                                                    | no       | Monotonic order value for this Agent.                     |
+| `updated_at`        | number                                                    | yes      | Unix time in milliseconds for this report.                |
+
+If `pane_id` exists, the store key is `zellij_session:pane_id`. This makes a restarted Agent in the same pane replace the old row.
+
+If `pane_id` does not exist, the store key is `agent_id`.
+
+## `agent-threads delete` [#agent-threads-delete]
+
+Deletes one Agent row.
+
+```sh
+agent-threads delete --agent-id '<id>'
+```
+
+Run this command when the harness exits.
+
+You can also publish `state: "shutdown"`. The CLI treats that report as a delete.
+
+## `agent-threads snapshot` [#agent-threads-snapshot]
+
+Reads the current store.
+
+```sh
+agent-threads snapshot --json
+```
+
+Use this command to debug an integration. Do not use it as the source of truth inside a hook.
+
+## Claude Code example [#claude-code-example]
+
+Claude Code command hooks receive JSON on `stdin`. See the [Claude Code hooks reference](https://code.claude.com/docs/en/hooks.md). Put a small publisher script on disk, then call it from hook events.
+
+Example `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/agent-threads.mjs", "timeout": 3 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Example `.claude/hooks/agent-threads.mjs`:
+
+```js
+#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
+const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+const now = Date.now();
+const zellijSession = process.env.ZELLIJ_SESSION_NAME;
+const paneId = process.env.ZELLIJ_PANE_ID;
+const agentId = paneId
+  ? `claude-code:${zellijSession ?? "zellij"}:${paneId}`
+  : `claude-code:${input.session_id}`;
+
+if (input.hook_event_name === "SessionEnd") {
+  spawnSync("agent-threads", ["delete", "--agent-id", agentId], { stdio: "ignore" });
+  process.exit(0);
+}
+
+const tool = input.tool_name;
+const event = input.hook_event_name;
+const payload = {
+  version: 2,
+  harness: "claude-code",
+  agent_id: agentId,
+  session_name: input.session_id,
+  cwd: input.cwd ?? process.cwd(),
+  zellij_session: zellijSession,
+  pane_id: paneId,
+  state: event === "Stop" || event === "SessionStart" ? "idle" : "running",
+  activity: event === "PreToolUse" ? "tool_running" : event === "Stop" || event === "SessionStart" ? "settled" : "thinking",
+  title: process.env.ZELLIJ_PANE_TITLE,
+  current_tool: event === "PreToolUse" ? tool : undefined,
+  current_tool_kind: event === "PreToolUse" ? "tool" : undefined,
+  last_tool: tool,
+  last_tool_at: tool ? now : undefined,
+  settled_reason: event === "Stop" ? "finished" : undefined,
+  updated_at: now
+};
+
+spawnSync("agent-threads", ["upsert", "--json", JSON.stringify(payload)], { stdio: "ignore" });
+```
+
+## Codex example [#codex-example]
+
+Codex command hooks also receive JSON on `stdin`. See the [Codex hooks reference](https://developers.openai.com/codex/hooks). Put the same publisher shape behind Codex hook events.
+
+Example `.codex/hooks.json`:
+
+```json
+{
+  "description": "Publish Codex sessions to Zellij Agent Threads.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .codex/hooks/agent-threads.mjs", "timeout": 3 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Example `.codex/hooks/agent-threads.mjs`:
+
+```js
+#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
+const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+const now = Date.now();
+const zellijSession = process.env.ZELLIJ_SESSION_NAME;
+const paneId = process.env.ZELLIJ_PANE_ID;
+const agentId = paneId
+  ? `codex:${zellijSession ?? "zellij"}:${paneId}`
+  : `codex:${input.session_id}`;
+
+if (input.hook_event_name === "SessionEnd") {
+  spawnSync("agent-threads", ["delete", "--agent-id", agentId], { stdio: "ignore" });
+  process.exit(0);
+}
+
+const tool = input.tool_name;
+const event = input.hook_event_name;
+const payload = {
+  version: 2,
+  harness: "codex",
+  agent_id: agentId,
+  session_name: input.session_id,
+  cwd: input.cwd ?? process.cwd(),
+  zellij_session: zellijSession,
+  pane_id: paneId,
+  state: event === "Stop" || event === "SessionStart" ? "idle" : "running",
+  activity: event === "PreToolUse" ? "tool_running" : event === "Stop" || event === "SessionStart" ? "settled" : "thinking",
+  model: input.model,
+  title: process.env.ZELLIJ_PANE_TITLE,
+  current_tool: event === "PreToolUse" ? tool : undefined,
+  current_tool_kind: event === "PreToolUse" ? "tool" : undefined,
+  last_tool: tool,
+  last_tool_at: tool ? now : undefined,
+  settled_reason: event === "Stop" ? "finished" : undefined,
+  updated_at: now
+};
+
+spawnSync("agent-threads", ["upsert", "--json", JSON.stringify(payload)], { stdio: "ignore" });
+```
+
+## Limits of hook-only setup [#limits-of-hook-only-setup]
+
+A hook-only setup is best effort.
+
+If no hook fires for more than 10 seconds, the row expires. Add a harness-native heartbeat when the harness supports long quiet turns.
+
+If the hook cannot read Zellij pane data, the plugin cannot focus the Agent pane. The row can still appear by `agent_id`.
+
+
 # How it works (/how-it-works)
 
 
 
 # How it works [#how-it-works]
 
-Zellij Agent Threads has three small parts:
+Zellij Agent Threads has three parts:
 
-* the Pi extension
+* the Pi extension wrapper
 * the `agent-threads` CLI and SQLite store
 * the Zellij plugin
 
-The store is the source of truth. The pipe only wakes the plugin.
+The `agent-threads` CLI is the data plane. The Pi extension only adapts Pi events into CLI calls.
 
-```mermaid
-flowchart LR
-  Pi[Pi extension] --> Store[agent-threads store]
-  Plugin[Zellij plugin] --> Store
-  Pi -. wake .-> Plugin
-```
+The store is the source of truth. A Zellij pipe only wakes the plugin.
 
-## 1. Pi writes reports [#1-pi-writes-reports]
+<Mermaid
+  chart="flowchart LR
+  Pi[Pi event] --> Extension[Pi extension wrapper]
+  Extension --> CLI[agent-threads CLI]
+  CLI --> Store[(SQLite store)]
+  Plugin[Zellij plugin] --> CLI
+  Extension -. wake .-> Plugin"
+/>
 
-The Pi extension listens to Pi lifecycle events. It publishes an Agent Report when the session starts, runs, becomes idle, uses a tool, or shuts down.
+## 1. The Pi extension runs the CLI [#1-the-pi-extension-runs-the-cli]
 
-Each report contains the agent state, pane ID, tab data, working directory, model, title, and update time.
+The Pi extension listens to Pi lifecycle events.
 
-```mermaid
-flowchart LR
-  Event[Pi event] --> Report[Agent Report v2]
-  Report --> CLI[agent-threads upsert]
-  CLI --> DB[(SQLite store)]
-```
+It builds an Agent Report payload when Pi starts, changes state, uses a tool, or shuts down.
 
-On shutdown, the extension deletes the row instead of writing a closed row.
+The extension does not keep Agent state. It runs the `agent-threads` CLI.
 
-```mermaid
-flowchart LR
-  Shutdown[session_shutdown] --> Delete[agent-threads delete]
-  Delete --> DB[(SQLite store)]
-```
+<Mermaid
+  chart="flowchart LR
+  Event[Pi event] --> Extension[Pi extension wrapper]
+  Extension --> Report[Agent Report v2]
+  Report --> Upsert[agent-threads upsert]
+  Upsert --> DB[(SQLite store)]"
+/>
 
-## 2. Pi wakes the plugin [#2-pi-wakes-the-plugin]
+On shutdown, the extension runs `agent-threads delete` for that Agent.
 
-After a store write, the Pi extension sends a Zellij pipe message.
+<Mermaid
+  chart="flowchart LR
+  Shutdown[session_shutdown] --> Extension[Pi extension wrapper]
+  Extension --> Delete[agent-threads delete]
+  Delete --> DB[(SQLite store)]"
+/>
 
-This message does not carry the agent list. It only tells the plugin to read the store.
+Each report contains state, pane ID, tab data, working directory, model, title, harness, tool, and update time.
 
-```mermaid
-sequenceDiagram
-  participant Pi as Pi extension
+## 2. The extension wakes the plugin [#2-the-extension-wakes-the-plugin]
+
+After the CLI writes to the store, the Pi extension sends a Zellij pipe message.
+
+The message does not carry the Agent list. It tells the plugin to read a fresh snapshot from the CLI.
+
+<Mermaid
+  chart="sequenceDiagram
+  participant Extension as Pi extension wrapper
   participant Zellij as zellij pipe
   participant Plugin as Zellij plugin
-  Pi->>Zellij: agenthreads:refresh
+  Extension->>Zellij: agenthreads:refresh
   Zellij->>Plugin: refresh
-  Plugin->>Plugin: schedule snapshot
-```
+  Plugin->>Plugin: schedule snapshot"
+/>
 
 The extension also calls `zellij action list-panes --json`. It uses this data to add pane and tab metadata to the report.
 
-```mermaid
-flowchart LR
-  Pi[Pi extension] --> Panes[zellij action list-panes]
-  Panes --> Report[Report title and tab data]
-```
+## 3. The store keeps one row per Agent location [#3-the-store-keeps-one-row-per-agent-location]
 
-## 3. The store keeps one row per agent location [#3-the-store-keeps-one-row-per-agent-location]
+The CLI stores reports in SQLite.
 
-The CLI stores reports in SQLite. The row key uses the Zellij pane when it exists.
+If a report has a Zellij pane ID, the row key uses the Zellij session and pane ID. This lets a restarted Agent in the same pane replace the old row.
 
-This means a restarted agent in the same pane replaces the old row.
-
-```mermaid
-flowchart LR
-  ReportA[pane 42 old agent] --> Key[pane key work:42]
-  ReportB[pane 42 new agent] --> Key
-  Key --> Row[one store row]
-```
+If a report has no pane ID, the row key uses `agent_id`.
 
 Each row has a lease. The default lease is 10 seconds. Each new report extends the lease.
 
-```mermaid
-flowchart LR
-  Upsert[upsert report] --> Lease[lease_until = now + 10s]
-  Lease --> Row[(agent row)]
-```
-
 ## 4. The plugin reads snapshots [#4-the-plugin-reads-snapshots]
 
-The Zellij plugin does not receive all report data through the pipe. It runs the CLI and reads a snapshot.
+The plugin runs this command to read the current Agent list:
 
-```mermaid
-flowchart LR
+```sh
+agent-threads snapshot --json
+```
+
+A valid snapshot replaces the plugin model.
+
+<Mermaid
+  chart="flowchart LR
   Timer[plugin timer or refresh pipe] --> CLI[agent-threads snapshot --json]
   CLI --> DB[(SQLite store)]
   DB --> Snapshot[AgentSnapshot]
-  Snapshot --> Render[render panel]
-```
+  Snapshot --> Render[render panel]"
+/>
 
-The plugin keeps a small in-memory model. A valid snapshot replaces that model.
+The plugin filters rows for panes that no longer exist. This protects the panel from stale rows after a pane closes.
 
-```mermaid
-flowchart LR
-  Snapshot[store snapshot] --> Filter[drop closed and stale panes]
-  Filter --> Model[plugin model]
-  Model --> UI[Zellij panel]
-```
+## 5. Stale rows disappear [#5-stale-rows-disappear]
 
-## 5. Stale entries are removed [#5-stale-entries-are-removed]
+Stale rows can come from a crash, a killed pane, or a missed shutdown event.
 
-Stale entries can come from a crash, a killed pane, or a missed shutdown event.
+The system removes stale data in three places:
 
-The system removes stale entries in three places.
+* The store deletes expired rows when it reads or writes.
+* The plugin removes silent Agents from memory after 10 seconds.
+* The plugin ignores snapshot rows for closed panes.
 
-### Store garbage collection [#store-garbage-collection]
+No background sweeper is required.
 
-`agent-threads` removes expired rows when it writes or reads the store.
-
-```mermaid
-flowchart LR
-  ReadOrWrite[snapshot or upsert] --> GC[delete rows where lease expired]
-  GC --> DB[(SQLite store)]
-```
-
-### Plugin lease expiry [#plugin-lease-expiry]
-
-The plugin also expires agents from memory after 10 seconds without a report.
-
-```mermaid
-flowchart LR
-  NoReport[no report for 10s] --> Expire[expire_silent_agents]
-  Expire --> UI[remove from panel]
-```
-
-### Closed pane filtering [#closed-pane-filtering]
-
-The plugin compares snapshot rows with live Zellij panes. If a row has a pane ID that no longer exists, the plugin ignores that row.
-
-```mermaid
-flowchart LR
-  SnapshotRow[row with pane_id] --> LivePanes[Zellij session panes]
-  LivePanes -->|pane exists| Keep[keep row]
-  LivePanes -->|pane missing| Drop[drop row]
-```
-
-## Result [#result]
+## Normal update path [#normal-update-path]
 
 A normal update uses this path:
 
-```mermaid
-sequenceDiagram
-  participant Pi as Pi extension
+<Mermaid
+  chart="sequenceDiagram
+  participant Pi as Pi
+  participant Extension as Pi extension wrapper
   participant CLI as agent-threads CLI
   participant DB as SQLite store
   participant Plugin as Zellij plugin
-  Pi->>CLI: upsert report
+  Pi->>Extension: lifecycle event
+  Extension->>CLI: upsert report
   CLI->>DB: write row and refresh lease
-  Pi-->>Plugin: agenthreads:refresh
+  Extension-->>Plugin: agenthreads:refresh
   Plugin->>CLI: snapshot --json
   CLI->>DB: delete expired rows, then read rows
   DB-->>Plugin: live reports
-  Plugin->>Plugin: filter closed panes
-```
+  Plugin->>Plugin: filter closed panes"
+/>
 
-The store cleans old rows. The plugin also protects the panel from stale rows. No background sweeper is required.
+The result is a small live panel that follows the current Zellij session.
 
 
 # Quickstart (/quickstart)
 
 
 
-# User quickstart [#user-quickstart]
+# Quickstart [#quickstart]
 
-## Goal [#goal]
+Use this tutorial to install Zellij Agent Threads from a release.
 
-Create a small Boxfiles workspace, add a manifest, inspect discovery, then plan or apply it.
+You will install the `agent-threads` CLI, the Zellij plugin, and the Pi extension. Then you will open the plugin in a Zellij layout.
 
-## 1. Create a workspace [#1-create-a-workspace]
+## Prerequisites [#prerequisites]
 
-```sh
-mkdir workstatio
-cd workstation
-mkdir -p modules/files
-```
+Install these tools first:
 
-## 2. Create a manifest [#2-create-a-manifest]
+* [Zellij](https://zellij.dev/)
+* [Pi](https://github.com/badlogic/pi-mono)
 
-> Boxfiles discovers all `.yaml`, `.yml`, and `.toml` files (not inside a `files` dir), considering them to be boxfile manifests.
+Make sure that `~/.local/bin` is in your `PATH`.
 
-Create `modules/git.yaml`:
+## 1. Download the CLI [#1-download-the-cli]
 
-```yaml
-steps:
-  - id: copy-gitconfig
-    uses: copy
-    with:
-      from: gitconfig
-      to: ~/.gitconfig
-      overwrite: false
-```
-
-Create `modules/files/gitconfig`:
-
-```ini
-[user]
-name = Example
-email = ex@mp.le
-```
-
-See [`copy` built-in plugin docs](/builtin/copy) for source path rules and planning behavior.
-
-## 3. Inspect discovered manifests [#3-inspect-discovered-manifests]
-
-Run Boxfiles from the workspace root:
+Download the release asset for your platform:
 
 ```sh
-boxfiles manifests files
+mkdir -p ~/.local/bin
+curl -L https://github.com/zenobi-us/zellij-agent-threads/releases/latest/download/agent-threads-linux-x64 \
+  -o ~/.local/bin/agent-threads
+chmod +x ~/.local/bin/agent-threads
 ```
 
-Expected output shape:
+Use one of these assets:
 
-```markdown
-## Discovered Manifests
+* `agent-threads-linux-x64`
+* `agent-threads-linux-arm64`
+* `agent-threads-darwin-x64`
+* `agent-threads-darwin-arm64`
+* `agent-threads-windows-x64.exe`
 
-- [modules.git](modules/git.yaml)
-```
+## 2. Install the plugin and Pi extension [#2-install-the-plugin-and-pi-extension]
 
-Use `--dir` when running from another directory:
+Run the released installer:
 
 ```sh
-boxfiles manifests files --dir ./workstation
+agent-threads install
 ```
 
-## 4. Reference manifest dependencies [#4-reference-manifest-dependencies]
+The installer downloads assets for the same version as the CLI.
 
-Manifest IDs are derived from manifest paths relative to the selected root. The extension is removed and path separators become dots.
+It installs these files:
+
+* Zellij plugin: `~/.config/zellij/plugins/agent-threads.wasm`
+* Pi extension: `~/.pi/agent/extensions/pi-agenthread`
+
+The installer can edit `~/.config/zellij/config.kdl` in an interactive terminal. It creates `~/.config/zellij/config.kdl.bak` before it writes changes.
+
+If you want the installer to edit without a prompt, run this command:
+
+```sh
+agent-threads install --yes
+```
+
+If the terminal is not interactive, the installer prints the Zellij snippet instead.
+
+## 3. Add the Zellij plugin alias [#3-add-the-zellij-plugin-alias]
+
+If the installer did not edit your Zellij configuration, add this alias to `~/.config/zellij/config.kdl`:
+
+```kdl
+plugins {
+    agent-threads location="file:/home/you/.config/zellij/plugins/agent-threads.wasm"
+}
+```
+
+Replace `/home/you` with your home directory.
+
+## 4. Add the plugin pane to a layout [#4-add-the-plugin-pane-to-a-layout]
+
+Create a layout file, for example `~/.config/zellij/layouts/agent-threads.kdl`:
+
+```kdl
+layout {
+    pane {
+        plugin location="agent-threads"
+    }
+}
+```
+
+Start Zellij with that layout:
+
+```sh
+zellij --layout ~/.config/zellij/layouts/agent-threads.kdl
+```
+
+## 5. Start Pi [#5-start-pi]
+
+Start Pi in any Zellij pane.
+
+The Pi extension listens to Pi events. It runs `agent-threads upsert` and `agent-threads delete` for you.
+
+The `agent-threads` CLI owns the store. The extension is only the Pi wrapper.
+
+The plugin panel shows each active Agent with its state, pane, model, title, worktree, and current tool.
+
+## 6. Check the result [#6-check-the-result]
+
+Look for the Agent row in the plugin panel.
+
+If the panel is empty, read the store snapshot:
+
+```sh
+agent-threads snapshot --json
+```
+
+If the snapshot is empty, make sure that Pi runs inside Zellij and that the Pi wrapper is installed.
+
+## Contributor install [#contributor-install]
+
+Source installs are for contributors.
+
+Use the source install flow in the [repository README](https://github.com/zenobi-us/zellij-agent-threads#contributor-source-install).
+
+
+# Templates (/templates)
+
+
+
+# Templates [#templates]
+
+The Zellij plugin renders its panel with MiniJinja templates.
+
+Use `template` for a small inline template. Use `template_file` for a file that can include other template files.
+
+## Inline template [#inline-template]
+
+Add `template` to the plugin pane in your Zellij layout:
+
+```kdl
+plugin location="agent-threads" {
+    template "{{ zellij_session }}: {{ agents | length }} agents"
+}
+```
+
+Use escaped newlines for a multi-line inline template. Zellij layouts use KDL v1, so triple-quoted strings do not work.
+
+```kdl
+plugin location="agent-threads" {
+    template "{{ zellij_session }}\n{% for tab in tabs %}{% if tab.agents | length > 0 %}{{ tab.tab_name }} [{{ tab.agents | length }}]\n{% for agent in tab.agents %}- {{ agent.title }} {{ agent.state }}\n  {{ agent.cwd }}\n{% endfor %}{% endif %}{% endfor %}"
+}
+```
+
+## Template file [#template-file]
+
+Add `template_file` when the template must live on disk:
+
+```kdl
+plugin location="agent-threads" {
+    template_file "/home/you/.config/zellij-agent-threads/templates/main.jinja"
+}
+```
+
+`template` and `template_file` are mutually exclusive.
+
+`template_file` accepts absolute paths, `~/...` paths, and relative paths. Relative paths use `${ZELLIJ_CONFIG_DIR:-$HOME/.config/zellij}`.
+
+External templates require Zellij `FullHdAccess` permission.
+
+## Include another file [#include-another-file]
+
+`main.jinja` can include files from the same template directory:
+
+```jinja
+{{ zellij_session }}
+{% include "agents.jinja" %}
+```
+
+The plugin mounts the template directory only. It does not expose the full host filesystem.
+
+## Model fields [#model-fields]
+
+The template model exposes these top-level values:
+
+| Field            | Meaning                                   |
+| ---------------- | ----------------------------------------- |
+| `zellij_session` | Current Zellij session name.              |
+| `agents`         | Flat list of known Agents.                |
+| `sessions`       | Native Zellij sessions with Agent counts. |
+| `tabs`           | Tabs in the current Zellij session.       |
+| `events`         | Recent plugin events.                     |
+| `has_error`      | `true` when the plugin has an error.      |
+| `last_error`     | Last plugin error text.                   |
+
+Each `agent` exposes these fields:
+
+| Field            | Meaning                                          |
+| ---------------- | ------------------------------------------------ |
+| `id`             | Template identity for the Agent row.             |
+| `agent_id`       | Stable Agent ID from the report.                 |
+| `pane_id`        | Stable pane identity when Zellij reports one.    |
+| `pane`           | Pane value for `actions.focus_pane(agent.pane)`. |
+| `session_name`   | Diagnostic session name from the report.         |
+| `state`          | Agent state, for example `running` or `idle`.    |
+| `cwd`            | Current working directory.                       |
+| `model`          | Model name when the harness reports it.          |
+| `title`          | Agent title.                                     |
+| `zellij_session` | Zellij session for this Agent.                   |
+| `harness`        | Harness name, for example `pi`.                  |
+| `current_tool`   | Current tool name when the harness reports it.   |
+| `focused`        | `true` when the pane is focused.                 |
+| `active_tab`     | `true` when the Agent is in the active tab.      |
+
+Each `tab` exposes these fields:
+
+| Field      | Meaning                                                      |
+| ---------- | ------------------------------------------------------------ |
+| `id`       | Template identity for the tab.                               |
+| `tab_id`   | Native tab ID. Use it with `actions.switch_tab(tab.tab_id)`. |
+| `tab_name` | Native tab name.                                             |
+| `active`   | `true` when this is the active tab.                          |
+| `agents`   | Agents that belong to this tab.                              |
+
+Each `session` exposes these fields:
+
+| Field                    | Meaning                                                                |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `id`                     | Runtime-owned stable identity for one native session generation.       |
+| `generation_id`          | Same value as `id`, kept for template compatibility.                   |
+| `name`                   | Native Zellij session name.                                            |
+| `status`                 | `current` for the current session. Other active sessions use `active`. |
+| `agent_count`            | Number of known Agents for this session.                               |
+| `running_agent_count`    | Number of running Agents for this session.                             |
+| `connected_client_count` | Number of connected Zellij clients. Web clients are included.          |
+| `tab_count`              | Number of native tabs in the session.                                  |
+| `pane_count`             | Number of native panes in the session.                                 |
+| `created_at_seconds`     | Native Zellij session-age value, in seconds.                           |
+| `current`                | `true` when this is the current Zellij session.                        |
+
+## Actions [#actions]
+
+Interactive template entries use typed actions:
+
+```jinja
+{% call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) %}
+{{ agent.title }}
+{% endcall %}
+```
+
+Available actions are:
+
+| Action                                    | Use                                      |
+| ----------------------------------------- | ---------------------------------------- |
+| `actions.focus_pane(agent.pane)`          | Focus an Agent pane.                     |
+| `actions.switch_tab(tab.tab_id)`          | Switch to a tab.                         |
+| `actions.switch_to_session(session.name)` | Switch to another active Zellij session. |
+
+Do not attach `actions.switch_to_session(session.name)` to the current session.
+
+## Colors and formatting [#colors-and-formatting]
+
+Templates use `zellij-template-render` components and filters.
+
+Colors use `index:N` or `rgb:R,G,B` values:
+
+```jinja
+{{ agent.title | fg("index:6") }}
+{{ agent.state | bg("rgb:40,44,52") }}
+{{ agent.cwd | fg(theme.active_text) | bg(theme.active_background) }}
+```
+
+Use the [zellij-template-render colour contract](https://github.com/zenobi-us/zellij-plugins/tree/main/pkgs/zellij-template-render#colour-contract) for the colour and renderer reference.
+
+MiniJinja `format` works as usual:
+
+```jinja
+{{ " %s " | format(agent.title) }}
+```
+
+Use `format_time` for Unix timestamps.
+
+## Animation [#animation]
+
+`AnimationFrame(fps=...)` returns a wall-clock frame number and schedules another render.
+
+```jinja
+{% set frames = ["⠋", "⠙", "⠹", "⠸"] %}
+{% if agent.state == "running" %}
+  {{ frames[AnimationFrame(fps=8) % (frames | length)] }}
+{% endif %}
+```
+
+Use a value from 1 to 20 for `fps`.
+
+Every animation frame reruns the full template. Keep animated templates small.
+
+
+# Troubleshooting (/troubleshooting)
+
+
+
+# Troubleshooting [#troubleshooting]
+
+Use this page when the plugin pane is empty, the installer prints a snippet, or a template fails.
+
+## The panel is empty [#the-panel-is-empty]
+
+First, make sure that Pi runs inside Zellij.
+
+Then read the store snapshot:
+
+```sh
+agent-threads snapshot --json
+```
+
+If the snapshot contains Agents, the plugin is not reading or rendering the store.
+
+Check that your Zellij layout contains the plugin pane:
+
+```kdl
+layout {
+    pane {
+        plugin location="agent-threads"
+    }
+}
+```
+
+Check that `~/.config/zellij/config.kdl` contains the plugin alias:
+
+```kdl
+plugins {
+    agent-threads location="file:/home/you/.config/zellij/plugins/agent-threads.wasm"
+}
+```
+
+If the snapshot is empty, the Pi extension did not run `agent-threads upsert` successfully.
+
+Make sure that `agent-threads` is in the `PATH` that Pi uses.
+
+Then run the installer again:
+
+```sh
+agent-threads install
+```
+
+Then start a new Pi process inside Zellij so the wrapper can see pane metadata.
+
+## The installer prints a KDL snippet [#the-installer-prints-a-kdl-snippet]
+
+This happens in a non-interactive terminal, or when the installer cannot edit the Zellij configuration.
+
+Copy the printed `plugins` block into `~/.config/zellij/config.kdl`.
+
+Then add `plugin location="agent-threads"` to the layout that you use.
+
+## The Pi wrapper is missing [#the-pi-wrapper-is-missing]
+
+The installer installs the Pi extension wrapper only when it detects Pi, or when you select Pi explicitly.
+
+Run this command if Pi exists but detection fails:
+
+```sh
+agent-threads install --harness pi
+```
+
+The wrapper installs to this path:
 
 ```text
-base/foundation.toml -> base.foundation
-demo/base/foundation.yaml -> demo.base.foundation
-some/deeply/nested/manifest.yml -> some.deeply.nested.manifest
+~/.pi/agent/extensions/pi-agenthread
 ```
 
-`dependsOn` accepts full manifest IDs or shorter IDs that resolve through enclosing namespaces.
+## Agents disappear after 10 seconds [#agents-disappear-after-10-seconds]
 
-```yaml
-dependsOn:
-  - base.foundation
-```
+This is normal when an Agent stops sending reports.
 
-Dependency resolution succeeds only when the dependency token maps to one unique manifest.
-If multiple unique manifests match, Boxfiles fails and requires the full manifest ID.
+Each report renews a 10-second lease. The store and plugin remove stale rows after the lease expires.
 
-## 5. Plan or apply [#5-plan-or-apply]
-
-Compile a manifest plan:
+If a running Agent disappears, restart Pi in that pane. Then check that the wrapper runs the CLI again:
 
 ```sh
-boxfiles manifests plan
+agent-threads snapshot --json
 ```
 
-Apply all discovered manifests when ready:
+## Closed panes still appear [#closed-panes-still-appear]
+
+The plugin filters rows for panes that no longer exist.
+
+If a stale row remains in the store, run garbage collection:
 
 ```sh
-boxfiles apply --confirm
+agent-threads gc --json
 ```
 
-Preview apply without mutating files:
+Then refresh the plugin pane or restart the Zellij session.
 
-```sh
-boxfiles apply --dry-run
+## A template file does not load [#a-template-file-does-not-load]
+
+`template_file` requires Zellij `FullHdAccess` permission.
+
+When Zellij asks for permission, grant it.
+
+Make sure that `template` and `template_file` are not both set:
+
+```kdl
+plugin location="agent-threads" {
+    template_file "/home/you/.config/zellij-agent-threads/templates/main.jinja"
+}
 ```
+
+Relative template paths use `${ZELLIJ_CONFIG_DIR:-$HOME/.config/zellij}`.
+
+Includes and imports resolve from the directory that contains the entry template file.
+
+## The template shows an error [#the-template-shows-an-error]
+
+Start with the smallest template:
+
+```kdl
+plugin location="agent-threads" {
+    template "{{ zellij_session }}: {{ agents | length }} agents"
+}
+```
+
+If this works, the plugin and store are healthy. The error is in the template file.
+
+Check field names against the [Templates reference](/templates).
 
 
 # Why Zellij Agent Threads (/why)
@@ -278,101 +896,82 @@ boxfiles apply --dry-run
 
 # Why Zellij Agent Threads [#why-zellij-agent-threads]
 
-Zellij Agent Threads shows agents inside Zellij.
+Zellij Agent Threads shows active AI Agents inside Zellij.
 
-It gives you a sidebar or floating panel that lists agents running anywhere in the current Zellij session, across panes and tabs.
+It gives you one terminal-native panel for Agents that run across tabs, panes, and worktrees.
 
 ## The problem [#the-problem]
 
-Agent work spreads across tabs, panes, and worktrees. After a few prompts, it gets hard to tell what is still running and where it lives.
+Agent work spreads quickly.
 
-You need one terminal-native view that answers:
+One Agent can run in a feature worktree. Another Agent can run tests in a different tab. A third Agent can sit idle after a review.
 
-* which agents are running?
-* which agents are idle?
-* which tab are they in?
-* which worktree are they using?
-* what belongs to this Zellij session?
+After a few prompts, tab names are not enough. You need to know where each Agent lives and what each Agent is doing.
+
+Zellij Agent Threads answers these questions:
+
+* Which Agents are running?
+* Which Agents are idle?
+* Which tab contains an Agent?
+* Which pane contains an Agent?
+* Which worktree does the Agent use?
+* Which Agents belong to this Zellij session?
+
+## The model [#the-model]
+
+A harness gives Agent state to `agent-threads`.
+
+Pi is the first supported harness. Its extension is a wrapper that turns Pi lifecycle events into `agent-threads` CLI calls.
+
+The CLI writes Agent Reports to SQLite. The Zellij plugin reads snapshots from the CLI and renders a panel.
 
 ```text
-agent in any pane or tab
-  -> Agent Report v2
-  -> Zellij panel
+Pi event
+  -> Pi extension wrapper
+  -> agent-threads upsert/delete
+  -> SQLite store
+  -> Zellij plugin snapshot
+  -> Zellij plugin panel
 ```
 
 ## The default view [#the-default-view]
 
-The default list groups agents by tab:
-
-```text
-{TabName} [count]
-  - {agentname} {status}
-    {worktreepath}
-  - {agentname} {status}
-    {worktreepath}
-```
-
-Example:
+The default panel groups Agents by Zellij tab:
 
 ```text
 frontend [2]
-  - claude running
+  - pi running
     ~/src/app/.worktrees/nav-redesign
-  - qwen idle
+  - pi idle
     ~/src/app
 
 infra [1]
-  - codex running
+  - pi running
     ~/src/ops/.worktrees/tf-cleanup
 ```
 
-## What it optimizes for [#what-it-optimizes-for]
+The panel also shows pane data, model data, titles, current tools, and recent plugin events.
 
-### Current-session focus [#current-session-focus]
+## What this project optimizes for [#what-this-project-optimizes-for]
 
-By default, the panel only shows agents from the current Zellij session. The goal is not a global dashboard. It is local awareness for the workspace you are already using.
+Zellij Agent Threads optimizes for a small live overview.
 
-### Pane and tab coverage [#pane-and-tab-coverage]
+It is not an Agent runner. It does not start Agents. It does not replace Pi, Zellij, or your task tracker.
 
-An agent can start in any pane on any tab. The panel collects those reports and groups them into one readable list.
+It only answers one question: what is active in this Zellij session?
 
-### Worktree clarity [#worktree-clarity]
+## Why Zellij [#why-zellij]
 
-The worktree path matters more than process trivia. When several agents are active, the first question is usually “what code is this touching?”
+Zellij already knows the terminal layout.
 
-### Harness-neutral reporting [#harness-neutral-reporting]
+It knows tabs, panes, clients, and sessions. It can host a plugin pane next to your terminals. It can focus a pane when you click an entry.
 
-The first supported harness is only the first integration. Any harness can publish agent status if it reports agent id, status, tab, pane, and worktree path.
+This makes Zellij a good place for the Agent overview.
 
-## What this is not [#what-this-is-not]
+## Current limits [#current-limits]
 
-* not an orchestrator
-* not a scheduler
-* not durable history
-* not telemetry
-* not a web dashboard
+This project is in early development.
 
-It is a Zellij-native status list for agents.
+The first supported harness is Pi. Other harnesses can integrate by writing Agent Reports to the `agent-threads` CLI.
 
-## Good fit [#good-fit]
-
-Use it when you want:
-
-* a sidebar list of agents
-* a floating “what is running?” panel
-* status from panes across all tabs
-* grouping by tab
-* worktree paths at a glance
-* current-session filtering by default
-
-## Bad fit [#bad-fit]
-
-Use something else when you need:
-
-* cross-machine tracking
-* permanent audit logs
-* metrics
-* remote control
-* workflow automation
-
-Zellij Agent Threads stays small: receive Agent Reports, group them, render a useful list.
+The template API can change while the project is young. Pin release versions when you share templates across machines.

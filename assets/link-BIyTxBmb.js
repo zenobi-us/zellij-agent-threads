@@ -1,0 +1,1 @@
+import{r as e}from"./chunk-QTnfLwEv.js";import{i as t,r as n,s as r}from"./index-DEI7-6Pc.js";function i(){return t()}var a=e(r(),1);function o({href:e=`#`,children:t,...r}){return typeof global<`u`&&global.LINK_SSG_CONTEXT&&global.LINK_SSG_CONTEXT.links.push({href:e,fromPathname:i().path}),(0,a.jsx)(n,{to:e,...r,children:t})}export{i as n,o as t};

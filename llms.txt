@@ -1,5 +1,8 @@
 # Docs
 
-- [Why Zellij Agent Threads](/why): Why Zellij Agent Threads exists: a Zellij panel for tracking agents across panes and tabs.
-- [How it works](/how-it-works): How Pi reports, the agent-threads store, and the Zellij plugin keep the agent list current.
-- [Quickstart](/quickstart): Create a workspace, write a manifest, and run Boxfiles.
+- [Why Zellij Agent Threads](/why): Why Zellij Agent Threads exists, and what problem it solves.
+- [Quickstart](/quickstart): Install the released CLI, add the Zellij plugin pane, and see Pi Agents in Zellij.
+- [How it works](/how-it-works): How the Pi wrapper runs the agent-threads CLI, and how the Zellij plugin reads snapshots.
+- [Generic harness setup](/harness-setup): Connect any agent harness that can run hook commands to Zellij Agent Threads.
+- [Templates](/templates): Template configuration, model fields, actions, and color values.
+- [Troubleshooting](/troubleshooting): Fix common install, panel, store, and template problems.

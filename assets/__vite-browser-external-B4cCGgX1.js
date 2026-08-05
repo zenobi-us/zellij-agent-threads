@@ -1,1 +1,0 @@
-import{t as e}from"./flexsearch-static-BsNQDOfa.js";export default e();

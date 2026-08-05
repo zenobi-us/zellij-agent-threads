@@ -10,48 +10,407 @@
 a:I["40036365f8f4",[],"ViewOptionsPopover",1]
 b:I["40036365f8f4",[],"DocsBody",1]
 c:I["506bd082b67b",[],"Heading",1]
-d:I["4e3cc1f7b994",[],"CodeBlock",1]
-36:I["4e3cc1f7b994",[],"Pre",1]
-:HL["/zellij-agent-threads/assets/pages-BMqdkJWn.css","stylesheet"]
+34:I["5c57a93f55ec",[],"CodeBlock",1]
+35:I["5c57a93f55ec",[],"Pre",1]
+:HL["/zellij-agent-threads/assets/pages-DZo5Gkgj.css","stylesheet"]
 :HL["https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap","stylesheet"]
-0:{"route:/how-it-works":["$","$L1",null,{"id":"page:/how-it-works"}],"ETAG:route:/how-it-works":"static","root":["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":[["$","head",null,{"children":[["$","link",null,{"rel":"stylesheet","href":"/zellij-agent-threads/assets/pages-BMqdkJWn.css"}],[["$","link",null,{"rel":"preconnect","href":"https://fonts.googleapis.com"}],["$","link",null,{"rel":"preconnect","href":"https://fonts.gstatic.com","crossOrigin":""}],["$","link",null,{"href":"https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap","rel":"stylesheet"}]]]}],["$","body",null,{"data-version":"1.0","className":"flex flex-col min-h-screen","children":["$","$L2",null,{"children":["$","$L3",null,{}],"search":{"enabled":true,"SearchDialog":"$4"}}]}]]}],"ETAG:root":"static","page:/how-it-works":["$","$L5",null,{"tree":{"type":"root","$ref":{"folder":"","meta":"meta.json"},"$id":"root","name":"Docs","children":[{"$id":"why.md","type":"page","name":"Why Zellij Agent Threads","description":"Why Zellij Agent Threads exists: a Zellij panel for tracking agents across panes and tabs.\n","url":"/why","$ref":"why.md"},{"$id":"how-it-works.md","type":"page","name":"How it works","description":"How Pi reports, the agent-threads store, and the Zellij plugin keep the agent list current.","url":"/how-it-works","$ref":"how-it-works.md"},{"$id":"quickstart.md","type":"page","name":"Quickstart","description":"Create a workspace, write a manifest, and run Boxfiles.","url":"/quickstart","$ref":"quickstart.md"}]},"tabs":[],"sidebar":{},"githubUrl":"https://github.com/zenobi-us/zellij-agent-threads","nav":{"title":"Zellij Agent Threads"},"children":[[["$","title",null,{"children":"How it works"}],["$","meta",null,{"property":"og:title","content":"How it works"}],["$","meta",null,{"property":"og:description","content":"How Pi reports, the agent-threads store, and the Zellij plugin keep the agent list current."}],"$undefined","$undefined"],["$","$L6",null,{"toc":[{"depth":1,"url":"#how-it-works","title":"How it works"},{"depth":2,"url":"#1-pi-writes-reports","title":"1. Pi writes reports"},{"depth":2,"url":"#2-pi-wakes-the-plugin","title":"2. Pi wakes the plugin"},{"depth":2,"url":"#3-the-store-keeps-one-row-per-agent-location","title":"3. The store keeps one row per agent location"},{"depth":2,"url":"#4-the-plugin-reads-snapshots","title":"4. The plugin reads snapshots"},{"depth":2,"url":"#5-stale-entries-are-removed","title":"5. Stale entries are removed"},{"depth":3,"url":"#store-garbage-collection","title":"Store garbage collection"},{"depth":3,"url":"#plugin-lease-expiry","title":"Plugin lease expiry"},{"depth":3,"url":"#closed-pane-filtering","title":"Closed pane filtering"},{"depth":2,"url":"#result","title":"Result"}],"children":[["$","$L7",null,{"children":"How it works"}],["$","$L8",null,{"className":"mb-0","children":"How Pi reports, the agent-threads store, and the Zellij plugin keep the agent list current."}],["$","div",null,{"className":"flex flex-row gap-2 items-center border-b pt-2 pb-6","children":[["$","$L9",null,{"markdownUrl":"/how-it-works.md"}],["$","$La",null,{"markdownUrl":"/how-it-works.md","githubUrl":"https://github.com/zenobi-us/zellij-agent-threads/blob/main/apps/docs/content/how-it-works.md"}]]}],["$","$Lb",null,{"children":[["$","$Lc",null,{"as":"h1","id":"how-it-works","children":"How it works"}],"\n",["$","p",null,{"children":"Zellij Agent Threads has three small parts:"}],"\n",["$","ul",null,{"children":["\n",["$","li",null,{"children":"the Pi extension"}],"\n",["$","li",null,{"children":["the ",["$","code",null,{"children":"agent-threads"}]," CLI and SQLite store"]}],"\n",["$","li",null,{"children":"the Zellij plugin"}],"\n"]}],"\n",["$","p",null,{"children":"The store is the source of truth. The pipe only wakes the plugin."}],"\n",["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":"$Le"}],"\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c","\n","$L1d","\n","$L1e","\n","$L1f","\n","$L20","\n","$L21","\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b","\n","$L2c","\n","$L2d","\n","$L2e","\n","$L2f","\n","$L30","\n","$L31","\n","$L32","\n","$L33","\n","$L34","\n","$L35"]}],"$undefined"]}]]}],"ETAG:page:/how-it-works":"static","ROUTE":["/how-it-works",""],"IS_STATIC":true,"HAS404":true,"_buildId":"n4m5mTPv"}
-e:["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi[Pi extension] --> Store[agent-threads store]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Plugin[Zellij plugin] --> Store"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi -. wake .-> Plugin"}]}]]}]}]
-f:["$","$Lc",null,{"as":"h2","id":"1-pi-writes-reports","children":"1. Pi writes reports"}]
-10:["$","p",null,{"children":"The Pi extension listens to Pi lifecycle events. It publishes an Agent Report when the session starts, runs, becomes idle, uses a tool, or shuts down."}]
-11:["$","p",null,{"children":"Each report contains the agent state, pane ID, tab data, working directory, model, title, and update time."}]
-12:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Event[Pi event] --> Report[Agent Report v2]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Report --> CLI[agent-threads upsert]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  CLI --> DB[(SQLite store)]"}]}]]}]}]}]
-13:["$","p",null,{"children":"On shutdown, the extension deletes the row instead of writing a closed row."}]
-14:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Shutdown[session_shutdown] --> Delete[agent-threads delete]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Delete --> DB[(SQLite store)]"}]}]]}]}]}]
-15:["$","$Lc",null,{"as":"h2","id":"2-pi-wakes-the-plugin","children":"2. Pi wakes the plugin"}]
-16:["$","p",null,{"children":"After a store write, the Pi extension sends a Zellij pipe message."}]
-17:["$","p",null,{"children":"This message does not carry the agent list. It only tells the plugin to read the store."}]
-18:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"sequenceDiagram"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant Pi as Pi extension"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant Zellij as zellij pipe"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant Plugin as Zellij plugin"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi->>Zellij: agenthreads:refresh"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Zellij->>Plugin: refresh"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Plugin->>Plugin: schedule snapshot"}]}]]}]}]}]
-19:["$","p",null,{"children":["The extension also calls ",["$","code",null,{"children":"zellij action list-panes --json"}],". It uses this data to add pane and tab metadata to the report."]}]
-1a:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi[Pi extension] --> Panes[zellij action list-panes]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Panes --> Report[Report title and tab data]"}]}]]}]}]}]
-1b:["$","$Lc",null,{"as":"h2","id":"3-the-store-keeps-one-row-per-agent-location","children":"3. The store keeps one row per agent location"}]
-1c:["$","p",null,{"children":"The CLI stores reports in SQLite. The row key uses the Zellij pane when it exists."}]
-1d:["$","p",null,{"children":"This means a restarted agent in the same pane replaces the old row."}]
-1e:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  ReportA[pane 42 old agent] --> Key[pane key work:42]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  ReportB[pane 42 new agent] --> Key"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Key --> Row[one store row]"}]}]]}]}]}]
-1f:["$","p",null,{"children":"Each row has a lease. The default lease is 10 seconds. Each new report extends the lease."}]
-20:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Upsert[upsert report] --> Lease[lease_until = now + 10s]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Lease --> Row[(agent row)]"}]}]]}]}]}]
+0:{"route:/how-it-works":["$","$L1",null,{"id":"page:/how-it-works"}],"ETAG:route:/how-it-works":"static","root":["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":[["$","head",null,{"children":[["$","link",null,{"rel":"stylesheet","href":"/zellij-agent-threads/assets/pages-DZo5Gkgj.css"}],[["$","link",null,{"rel":"preconnect","href":"https://fonts.googleapis.com"}],["$","link",null,{"rel":"preconnect","href":"https://fonts.gstatic.com","crossOrigin":""}],["$","link",null,{"href":"https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap","rel":"stylesheet"}]]]}],["$","body",null,{"data-version":"1.0","className":"flex flex-col min-h-screen","children":["$","$L2",null,{"children":["$","$L3",null,{}],"search":{"enabled":true,"SearchDialog":"$4"}}]}]]}],"ETAG:root":"static","page:/how-it-works":["$","$L5",null,{"tree":{"type":"root","$ref":{"folder":"","meta":"meta.json"},"$id":"root","name":"Docs","children":[{"$id":"why.md","type":"page","name":"Why Zellij Agent Threads","description":"Why Zellij Agent Threads exists, and what problem it solves.","url":"/why","$ref":"why.md"},{"$id":"quickstart.md","type":"page","name":"Quickstart","description":"Install the released CLI, add the Zellij plugin pane, and see Pi Agents in Zellij.","url":"/quickstart","$ref":"quickstart.md"},{"$id":"how-it-works.md","type":"page","name":"How it works","description":"How the Pi wrapper runs the agent-threads CLI, and how the Zellij plugin reads snapshots.","url":"/how-it-works","$ref":"how-it-works.md"},{"$id":"harness-setup.md","type":"page","name":"Generic harness setup","description":"Connect any agent harness that can run hook commands to Zellij Agent Threads.","url":"/harness-setup","$ref":"harness-setup.md"},{"$id":"templates.md","type":"page","name":"Templates","description":"Template configuration, model fields, actions, and color values.","url":"/templates","$ref":"templates.md"},{"$id":"troubleshooting.md","type":"page","name":"Troubleshooting","description":"Fix common install, panel, store, and template problems.","url":"/troubleshooting","$ref":"troubleshooting.md"}]},"tabs":[],"sidebar":{},"githubUrl":"https://github.com/zenobi-us/zellij-agent-threads","nav":{"title":"Zellij Agent Threads"},"children":[[["$","title",null,{"children":"How it works"}],["$","meta",null,{"property":"og:title","content":"How it works"}],["$","meta",null,{"property":"og:description","content":"How the Pi wrapper runs the agent-threads CLI, and how the Zellij plugin reads snapshots."}],"$undefined","$undefined"],["$","$L6",null,{"toc":[{"depth":1,"url":"#how-it-works","title":"How it works"},{"depth":2,"url":"#1-the-pi-extension-runs-the-cli","title":"1. The Pi extension runs the CLI"},{"depth":2,"url":"#2-the-extension-wakes-the-plugin","title":"2. The extension wakes the plugin"},{"depth":2,"url":"#3-the-store-keeps-one-row-per-agent-location","title":"3. The store keeps one row per Agent location"},{"depth":2,"url":"#4-the-plugin-reads-snapshots","title":"4. The plugin reads snapshots"},{"depth":2,"url":"#5-stale-rows-disappear","title":"5. Stale rows disappear"},{"depth":2,"url":"#normal-update-path","title":"Normal update path"}],"children":[["$","$L7",null,{"children":"How it works"}],["$","$L8",null,{"className":"mb-0","children":"How the Pi wrapper runs the agent-threads CLI, and how the Zellij plugin reads snapshots."}],["$","div",null,{"className":"flex flex-row gap-2 items-center border-b pt-2 pb-6","children":[["$","$L9",null,{"markdownUrl":"/how-it-works.md"}],["$","$La",null,{"markdownUrl":"/how-it-works.md","githubUrl":"https://github.com/zenobi-us/zellij-agent-threads/blob/main/apps/docs/content/how-it-works.md"}]]}],["$","$Lb",null,{"children":[["$","$Lc",null,{"as":"h1","id":"how-it-works","children":"How it works"}],"\n",["$","p",null,{"children":"Zellij Agent Threads has three parts:"}],"\n",["$","ul",null,{"children":["\n",["$","li",null,{"children":"the Pi extension wrapper"}],"\n",["$","li",null,{"children":["the ",["$","code",null,{"children":"agent-threads"}]," CLI and SQLite store"]}],"\n",["$","li",null,{"children":"the Zellij plugin"}],"\n"]}],"\n",["$","p",null,{"children":["The ",["$","code",null,{"children":"agent-threads"}]," CLI is the data plane. The Pi extension only adapts Pi events into CLI calls."]}],"\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c","\n","$L1d","\n","$L1e","\n","$L1f","\n","$L20","\n","$L21","\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b","\n","$L2c","\n","$L2d","\n","$L2e","\n","$L2f"]}],"$undefined"]}]]}],"ETAG:page:/how-it-works":"static","ROUTE":["/how-it-works",""],"IS_STATIC":true,"HAS404":true,"_buildId":"n_hkckym"}
+d:["$","p",null,{"children":"The store is the source of truth. A Zellij pipe only wakes the plugin."}]
+30:T178f,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980.049 139.32500000000002" width="980.049" height="139.32500000000002" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Pi" data-to="Extension" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="128.633,65.45 176.633,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Extension" data-to="CLI" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="343.071,65.45 605.568,65.45 605.568,65.45 629.568,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="CLI" data-to="Store" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="776.74,65.45 824.74,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Plugin" data-to="CLI" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="581.568,80.17500000000001 605.568,80.17500000000001 605.568,65.45 629.568,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Extension" data-to="Plugin" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="wake" points="343.071,71.60000000000001 379.071,71.60000000000001 379.071,80.17500000000001 473.669,80.17500000000001" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="Extension" data-to="Plugin" data-label="wake">
+  <rect x="387.071" y="64.17500000000001" width="42.598" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="408.37" y="79.32500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">wake</text>
+</g>
+<g class="node" data-id="Pi" data-label="Pi event" data-shape="rectangle">
+  <rect x="40" y="47" width="88.63300000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="84.3165" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pi event</text>
+</g>
+<g class="node" data-id="Extension" data-label="Pi extension wrapper" data-shape="rectangle">
+  <rect x="176.633" y="47" width="166.438" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="259.852" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pi extension wrapper</text>
+</g>
+<g class="node" data-id="CLI" data-label="agent-threads CLI" data-shape="rectangle">
+  <rect x="629.568" y="47" width="147.17200000000003" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="703.154" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">agent-threads CLI</text>
+</g>
+<g class="node" data-id="Store" data-label="SQLite store" data-shape="cylinder">
+  <rect x="824.74" y="47" width="115.30900000000001" height="36.900000000000006" fill="var(--_node-fill)" stroke="none" />
+  <line x1="824.74" y1="47" x2="824.74" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="940.049" y1="47" x2="940.049" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="882.3945" cy="83.9" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="882.3945" cy="47" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="882.3945" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SQLite store</text>
+</g>
+<g class="node" data-id="Plugin" data-label="Zellij plugin" data-shape="rectangle">
+  <rect x="473.669" y="61.725" width="107.899" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="527.6185" y="80.17500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Zellij plugin</text>
+</g>
+</svg>e:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$30"}}]
+f:["$","$Lc",null,{"as":"h2","id":"1-the-pi-extension-runs-the-cli","children":"1. The Pi extension runs the CLI"}]
+10:["$","p",null,{"children":"The Pi extension listens to Pi lifecycle events."}]
+11:["$","p",null,{"children":"It builds an Agent Report payload when Pi starts, changes state, uses a tool, or shuts down."}]
+12:["$","p",null,{"children":["The extension does not keep Agent state. It runs the ",["$","code",null,{"children":"agent-threads"}]," CLI."]}]
+31:T14ba,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 942.652 130.9" width="942.652" height="130.9" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Event" data-to="Extension" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="128.633,65.45 176.633,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Extension" data-to="Report" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="343.071,65.45 391.071,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Report" data-to="Upsert" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="526.3870000000001,65.45 574.3870000000001,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Upsert" data-to="DB" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="739.3430000000001,65.45 787.3430000000001,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="Event" data-label="Pi event" data-shape="rectangle">
+  <rect x="40" y="47" width="88.63300000000001" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="84.3165" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pi event</text>
+</g>
+<g class="node" data-id="Extension" data-label="Pi extension wrapper" data-shape="rectangle">
+  <rect x="176.633" y="47" width="166.438" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="259.852" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pi extension wrapper</text>
+</g>
+<g class="node" data-id="Report" data-label="Agent Report v2" data-shape="rectangle">
+  <rect x="391.071" y="47" width="135.31600000000003" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="458.72900000000004" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Agent Report v2</text>
+</g>
+<g class="node" data-id="Upsert" data-label="agent-threads upsert" data-shape="rectangle">
+  <rect x="574.3870000000001" y="47" width="164.95600000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="656.865" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">agent-threads upsert</text>
+</g>
+<g class="node" data-id="DB" data-label="SQLite store" data-shape="cylinder">
+  <rect x="787.3430000000001" y="47" width="115.30900000000001" height="36.900000000000006" fill="var(--_node-fill)" stroke="none" />
+  <line x1="787.3430000000001" y1="47" x2="787.3430000000001" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="902.652" y1="47" x2="902.652" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="844.9975000000001" cy="83.9" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="844.9975000000001" cy="47" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="844.9975000000001" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SQLite store</text>
+</g>
+</svg>13:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$31"}}]
+14:["$","p",null,{"children":["On shutdown, the extension runs ",["$","code",null,{"children":"agent-threads delete"}]," for that Agent."]}]
+32:T11ef,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820.8389999999999 130.9" width="820.8389999999999" height="130.9" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Shutdown" data-to="Extension" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="193.1,65.45 241.1,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Extension" data-to="Delete" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="407.538,65.45 455.538,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Delete" data-to="DB" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="617.53,65.45 665.53,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="Shutdown" data-label="session_shutdown" data-shape="rectangle">
+  <rect x="40" y="47" width="153.1" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="116.55" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">session_shutdown</text>
+</g>
+<g class="node" data-id="Extension" data-label="Pi extension wrapper" data-shape="rectangle">
+  <rect x="241.1" y="47" width="166.438" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="324.31899999999996" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pi extension wrapper</text>
+</g>
+<g class="node" data-id="Delete" data-label="agent-threads delete" data-shape="rectangle">
+  <rect x="455.538" y="47" width="161.99200000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="536.534" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">agent-threads delete</text>
+</g>
+<g class="node" data-id="DB" data-label="SQLite store" data-shape="cylinder">
+  <rect x="665.53" y="47" width="115.30900000000001" height="36.900000000000006" fill="var(--_node-fill)" stroke="none" />
+  <line x1="665.53" y1="47" x2="665.53" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="780.8389999999999" y1="47" x2="780.8389999999999" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="723.1845" cy="83.9" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="723.1845" cy="47" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="723.1845" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SQLite store</text>
+</g>
+</svg>15:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$32"}}]
+16:["$","p",null,{"children":"Each report contains state, pane ID, tab data, working directory, model, title, harness, tool, and update time."}]
+17:["$","$Lc",null,{"as":"h2","id":"2-the-extension-wakes-the-plugin","children":"2. The extension wakes the plugin"}]
+18:["$","p",null,{"children":"After the CLI writes to the store, the Pi extension sends a Zellij pipe message."}]
+19:["$","p",null,{"children":"The message does not carry the Agent list. It tells the plugin to read a fresh snapshot from the CLI."}]
+33:T1203,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 579.8035 270" width="579.8035" height="270" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="Extension" x1="109.219" y1="70" x2="109.219" y2="240" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Zellij" x1="272.4595" y1="70" x2="272.4595" y2="240" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Plugin" x1="412.4595" y1="70" x2="412.4595" y2="240" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="message" data-from="Extension" data-to="Zellij" data-label="agenthreads:refresh" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="109.219" y1="90" x2="272.4595" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="190.83925" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">agenthreads:refresh</text>
+</g>
+<g class="message" data-from="Zellij" data-to="Plugin" data-label="refresh" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="272.4595" y1="130" x2="412.4595" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="342.4595" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">refresh</text>
+</g>
+<g class="message" data-from="Plugin" data-to="Plugin" data-label="schedule snapshot" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="412.4595,170 442.4595,170 442.4595,190 412.4595,190" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="450.4595" y="180" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">schedule snapshot</text>
+</g>
+<g class="actor" data-id="Extension" data-label="Pi extension wrapper" data-type="participant">
+  <rect x="30" y="30" width="158.438" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="109.219" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Pi extension wrapper</text>
+</g>
+<g class="actor" data-id="Zellij" data-label="zellij pipe" data-type="participant">
+  <rect x="228.438" y="30" width="88.04299999999999" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="272.4595" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">zellij pipe</text>
+</g>
+<g class="actor" data-id="Plugin" data-label="Zellij plugin" data-type="participant">
+  <rect x="362.51" y="30" width="99.899" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="412.4595" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Zellij plugin</text>
+</g>
+</svg>1a:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$33"}}]
+1b:["$","p",null,{"children":["The extension also calls ",["$","code",null,{"children":"zellij action list-panes --json"}],". It uses this data to add pane and tab metadata to the report."]}]
+1c:["$","$Lc",null,{"as":"h2","id":"3-the-store-keeps-one-row-per-agent-location","children":"3. The store keeps one row per Agent location"}]
+1d:["$","p",null,{"children":"The CLI stores reports in SQLite."}]
+1e:["$","p",null,{"children":"If a report has a Zellij pane ID, the row key uses the Zellij session and pane ID. This lets a restarted Agent in the same pane replace the old row."}]
+1f:["$","p",null,{"children":["If a report has no pane ID, the row key uses ",["$","code",null,{"children":"agent_id"}],"."]}]
+20:["$","p",null,{"children":"Each row has a lease. The default lease is 10 seconds. Each new report extends the lease."}]
 21:["$","$Lc",null,{"as":"h2","id":"4-the-plugin-reads-snapshots","children":"4. The plugin reads snapshots"}]
-22:["$","p",null,{"children":"The Zellij plugin does not receive all report data through the pipe. It runs the CLI and reads a snapshot."}]
-23:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Timer[plugin timer or refresh pipe] --> CLI[agent-threads snapshot --json]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  CLI --> DB[(SQLite store)]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  DB --> Snapshot[AgentSnapshot]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Snapshot --> Render[render panel]"}]}]]}]}]}]
-24:["$","p",null,{"children":"The plugin keeps a small in-memory model. A valid snapshot replaces that model."}]
-25:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Snapshot[store snapshot] --> Filter[drop closed and stale panes]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Filter --> Model[plugin model]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Model --> UI[Zellij panel]"}]}]]}]}]}]
-26:["$","$Lc",null,{"as":"h2","id":"5-stale-entries-are-removed","children":"5. Stale entries are removed"}]
-27:["$","p",null,{"children":"Stale entries can come from a crash, a killed pane, or a missed shutdown event."}]
-28:["$","p",null,{"children":"The system removes stale entries in three places."}]
-29:["$","$Lc",null,{"as":"h3","id":"store-garbage-collection","children":"Store garbage collection"}]
-2a:["$","p",null,{"children":[["$","code",null,{"children":"agent-threads"}]," removes expired rows when it writes or reads the store."]}]
-2b:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  ReadOrWrite[snapshot or upsert] --> GC[delete rows where lease expired]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  GC --> DB[(SQLite store)]"}]}]]}]}]}]
-2c:["$","$Lc",null,{"as":"h3","id":"plugin-lease-expiry","children":"Plugin lease expiry"}]
-2d:["$","p",null,{"children":"The plugin also expires agents from memory after 10 seconds without a report."}]
-2e:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  NoReport[no report for 10s] --> Expire[expire_silent_agents]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Expire --> UI[remove from panel]"}]}]]}]}]}]
-2f:["$","$Lc",null,{"as":"h3","id":"closed-pane-filtering","children":"Closed pane filtering"}]
-30:["$","p",null,{"children":"The plugin compares snapshot rows with live Zellij panes. If a row has a pane ID that no longer exists, the plugin ignores that row."}]
-31:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"flowchart LR"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  SnapshotRow[row with pane_id] --> LivePanes[Zellij session panes]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  LivePanes -->|pane exists| Keep[keep row]"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  LivePanes -->|pane missing| Drop[drop row]"}]}]]}]}]}]
-32:["$","$Lc",null,{"as":"h2","id":"result","children":"Result"}]
-33:["$","p",null,{"children":"A normal update uses this path:"}]
-34:["$","$Ld",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"M 6,1 C 4.354992,1 3,2.354992 3,4 v 16 c 0,1.645008 1.354992,3 3,3 h 12 c 1.645008,0 3,-1.354992 3,-3 V 8 7 A 1.0001,1.0001 0 0 0 20.707031,6.2929687 l -5,-5 A 1.0001,1.0001 0 0 0 15,1 h -1 z m 0,2 h 7 v 3 c 0,1.645008 1.354992,3 3,3 h 3 v 11 c 0,0.564129 -0.435871,1 -1,1 H 6 C 5.4358712,21 5,20.564129 5,20 V 4 C 5,3.4358712 5.4358712,3 6,3 Z M 15,3.4140625 18.585937,7 H 16 C 15.435871,7 15,6.5641288 15,6 Z\" fill=\"currentColor\" /></svg>","children":["$","$L36",null,{"children":["$","code",null,{"children":[["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"sequenceDiagram"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant Pi as Pi extension"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant CLI as agent-threads CLI"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant DB as SQLite store"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  participant Plugin as Zellij plugin"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi->>CLI: upsert report"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  CLI->>DB: write row and refresh lease"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Pi-->>Plugin: agenthreads:refresh"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Plugin->>CLI: snapshot --json"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  CLI->>DB: delete expired rows, then read rows"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  DB-->>Plugin: live reports"}]}],"\n",["$","span",null,{"className":"line","children":["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  Plugin->>Plugin: filter closed panes"}]}]]}]}]}]
-35:["$","p",null,{"children":"The store cleans old rows. The plugin also protects the panel from stale rows. No background sweeper is required."}]
+22:["$","p",null,{"children":"The plugin runs this command to read the current Agent list:"}]
+23:["$","$L34",null,{"className":"shiki shiki-themes github-light github-dark","style":{"--shiki-light":"#24292e","--shiki-dark":"#e1e4e8","--shiki-light-bg":"#fff","--shiki-dark-bg":"#24292e"},"tabIndex":"0","icon":"<svg viewBox=\"0 0 24 24\"><path d=\"m 4,4 a 1,1 0 0 0 -0.7070312,0.2929687 1,1 0 0 0 0,1.4140625 L 8.5859375,11 3.2929688,16.292969 a 1,1 0 0 0 0,1.414062 1,1 0 0 0 1.4140624,0 l 5.9999998,-6 a 1.0001,1.0001 0 0 0 0,-1.414062 L 4.7070312,4.2929687 A 1,1 0 0 0 4,4 Z m 8,14 a 1,1 0 0 0 -1,1 1,1 0 0 0 1,1 h 8 a 1,1 0 0 0 1,-1 1,1 0 0 0 -1,-1 z\" fill=\"currentColor\" /></svg>","children":["$","$L35",null,{"children":["$","code",null,{"children":["$","span",null,{"className":"line","children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"agent-threads"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" snapshot"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --json"}]]}]}]}]}]
+24:["$","p",null,{"children":"A valid snapshot replaces the plugin model."}]
+36:T1458,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1051.579 130.9" width="1051.579" height="130.9" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="Timer" data-to="CLI" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="237.56,65.45 285.56,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="CLI" data-to="DB" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="501.645,65.45 549.645,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="DB" data-to="Snapshot" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="664.954,65.45 712.954,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="Snapshot" data-to="Render" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="845.306,65.45 893.306,65.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="Timer" data-label="plugin timer or refresh pipe" data-shape="rectangle">
+  <rect x="40" y="47" width="197.56" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="138.78" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">plugin timer or refresh pipe</text>
+</g>
+<g class="node" data-id="CLI" data-label="agent-threads snapshot --json" data-shape="rectangle">
+  <rect x="285.56" y="47" width="216.08499999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="393.60249999999996" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">agent-threads snapshot --json</text>
+</g>
+<g class="node" data-id="DB" data-label="SQLite store" data-shape="cylinder">
+  <rect x="549.645" y="47" width="115.30900000000001" height="36.900000000000006" fill="var(--_node-fill)" stroke="none" />
+  <line x1="549.645" y1="47" x2="549.645" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <line x1="664.954" y1="47" x2="664.954" y2="83.9" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="607.2995" cy="83.9" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <ellipse cx="607.2995" cy="47" rx="57.654500000000006" ry="7" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="607.2995" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">SQLite store</text>
+</g>
+<g class="node" data-id="Snapshot" data-label="AgentSnapshot" data-shape="rectangle">
+  <rect x="712.954" y="47" width="132.352" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="779.13" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">AgentSnapshot</text>
+</g>
+<g class="node" data-id="Render" data-label="render panel" data-shape="rectangle">
+  <rect x="893.306" y="47" width="118.27299999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="952.4425" y="65.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">render panel</text>
+</g>
+</svg>25:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$36"}}]
+26:["$","p",null,{"children":"The plugin filters rows for panes that no longer exist. This protects the panel from stale rows after a pane closes."}]
+27:["$","$Lc",null,{"as":"h2","id":"5-stale-rows-disappear","children":"5. Stale rows disappear"}]
+28:["$","p",null,{"children":"Stale rows can come from a crash, a killed pane, or a missed shutdown event."}]
+29:["$","p",null,{"children":"The system removes stale data in three places:"}]
+2a:["$","ul",null,{"children":["\n",["$","li",null,{"children":"The store deletes expired rows when it reads or writes."}],"\n",["$","li",null,{"children":"The plugin removes silent Agents from memory after 10 seconds."}],"\n",["$","li",null,{"children":"The plugin ignores snapshot rows for closed panes."}],"\n"]}]
+2b:["$","p",null,{"children":"No background sweeper is required."}]
+2c:["$","$Lc",null,{"as":"h2","id":"normal-update-path","children":"Normal update path"}]
+2d:["$","p",null,{"children":"A normal update uses this path:"}]
+37:T1efd,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 888.0545000000001 470" width="888.0545000000001" height="470" style="--bg:var(--color-fd-background);--fg:var(--color-fd-foreground)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="Pi" x1="70" y1="70" x2="70" y2="440" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Extension" x1="229.219" y1="70" x2="229.219" y2="440" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="CLI" x1="418.024" y1="70" x2="418.024" y2="440" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="DB" x1="581.2645" y1="70" x2="581.2645" y2="440" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Plugin" x1="724.8685" y1="70" x2="724.8685" y2="440" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="message" data-from="Pi" data-to="Extension" data-label="lifecycle event" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="90" x2="229.219" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="149.6095" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">lifecycle event</text>
+</g>
+<g class="message" data-from="Extension" data-to="CLI" data-label="upsert report" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="229.219" y1="130" x2="418.024" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="323.62149999999997" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">upsert report</text>
+</g>
+<g class="message" data-from="CLI" data-to="DB" data-label="write row and refresh lease" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="418.024" y1="170" x2="581.2645" y2="170" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="499.64425" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">write row and refresh lease</text>
+</g>
+<g class="message" data-from="Extension" data-to="Plugin" data-label="agenthreads:refresh" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="229.219" y1="210" x2="724.8685" y2="210" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="477.04375000000005" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">agenthreads:refresh</text>
+</g>
+<g class="message" data-from="Plugin" data-to="CLI" data-label="snapshot --json" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="724.8685" y1="250" x2="418.024" y2="250" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="571.44625" y="240" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">snapshot --json</text>
+</g>
+<g class="message" data-from="CLI" data-to="DB" data-label="delete expired rows, then read rows" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="418.024" y1="290" x2="581.2645" y2="290" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="499.64425" y="280" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">delete expired rows, then read rows</text>
+</g>
+<g class="message" data-from="DB" data-to="Plugin" data-label="live reports" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="581.2645" y1="330" x2="724.8685" y2="330" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="653.0665" y="320" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">live reports</text>
+</g>
+<g class="message" data-from="Plugin" data-to="Plugin" data-label="filter closed panes" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="724.8685,370 754.8685,370 754.8685,390 724.8685,390" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="762.8685" y="380" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">filter closed panes</text>
+</g>
+<g class="actor" data-id="Pi" data-label="Pi" data-type="participant">
+  <rect x="30" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="70" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Pi</text>
+</g>
+<g class="actor" data-id="Extension" data-label="Pi extension wrapper" data-type="participant">
+  <rect x="150" y="30" width="158.438" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="229.219" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Pi extension wrapper</text>
+</g>
+<g class="actor" data-id="CLI" data-label="agent-threads CLI" data-type="participant">
+  <rect x="348.438" y="30" width="139.17200000000003" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="418.024" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">agent-threads CLI</text>
+</g>
+<g class="actor" data-id="DB" data-label="SQLite store" data-type="participant">
+  <rect x="527.61" y="30" width="107.30900000000001" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="581.2645" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">SQLite store</text>
+</g>
+<g class="actor" data-id="Plugin" data-label="Zellij plugin" data-type="participant">
+  <rect x="674.9190000000001" y="30" width="99.899" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="724.8685" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Zellij plugin</text>
+</g>
+</svg>2e:["$","div",null,{"className":"not-prose my-6 overflow-x-auto rounded-xl border border-fd-border bg-fd-background p-4","dangerouslySetInnerHTML":{"__html":"$37"}}]
+2f:["$","p",null,{"children":"The result is a small live panel that follows the current Zellij session."}]
