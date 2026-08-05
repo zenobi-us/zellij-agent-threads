@@ -20,8 +20,8 @@ export default function Page() {
               suffix={<ReleaseVersion />}
             />
           }
-          title="Agent session overview plugin for Zellij"
-          subtitle="Agent Threads is a plugin for Zellij that provides an overview of all agent sessions, allowing you to easily monitor and manage your agents."
+          title="Agent overview plugin for Zellij"
+          subtitle="Zellij Agent Threads shows active AI Agents across tabs, panes, and worktrees so you can find running work without tab hunting."
         >
           <HeroActions>
             <HeroAction primary asChild>
