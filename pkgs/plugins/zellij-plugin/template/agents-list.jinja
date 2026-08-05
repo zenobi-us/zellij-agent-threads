@@ -1,9 +1,7 @@
 {% import "tree.jinja" as tree %}
+{% import "agent.jinja" as agent_view %}
 {%- if agents | length > 0 -%}
   {%- call Flex(shrink=0) -%}{{- " Agents " | bold -}}{%- endcall -%}
-  {%- set spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] -%}
-  {%- macro spinner(fps=8) -%}{{ spinner_frames[AnimationFrame(fps=fps) % (spinner_frames | length)] }}{%- endmacro -%}
-  {%- macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro -%}
 
   {%- for tab in tabs if tab.agents | length > 0 -%}
     {%- set tab_index = loop.index0 -%}
@@ -18,13 +16,7 @@
 
     {%- for agent in tab.agents -%}
       {%- set agent_is_last = loop.last -%}
-      {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
-      {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
-      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}{{- tree.prefix_line(loop.index0, loop.length, [tab_is_last]) | dim }}{{ t(agent_label, agent.focused) }}
-        {%- if agent.state == "running" and agent.current_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("? " ~ agent.current_tool) | dim if agent.current_tool_kind == "user_question" else ("↳ " ~ agent.current_tool) | dim }}{%- endif -%}
-        {%- if agent.state == "running" and not agent.current_tool and agent.last_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("last: " ~ agent.last_tool) | dim }}{%- endif -%}
-        {%- if agent.state != "running" and agent.settled_reason -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("settled: " ~ agent.settled_reason) | dim }}{%- endif -%}
-      {%- endcall -%}
+      {%- call Button(on_click=actions.focus_pane(agent.pane), focused=agent.focused) -%}{{ agent_view.button_body(agent, loop.index0, loop.length, tab_is_last, agent_is_last) }}{%- endcall -%}
     {%- endfor -%}
   {%- endfor -%}
 

@@ -1,0 +1,13 @@
+{% import "tree.jinja" as tree %}
+{%- set spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] -%}
+{%- macro spinner(fps=8) -%}{{ spinner_frames[AnimationFrame(fps=fps) % (spinner_frames | length)] }}{%- endmacro -%}
+{%- macro t(text, focused) -%}{{ text | bold if focused else text | dim }}{%- endmacro -%}
+
+{%- macro button_body(agent, index, total, tab_is_last, agent_is_last) -%}
+  {%- set icon = spinner() if agent.state == "running" else "󰏧" -%}
+  {%- set agent_label = "%s %s %s" | format(agent.pane, icon, agent.title) -%}
+  {{- tree.prefix_line(index, total, [tab_is_last]) | dim }}{{ t(agent_label, agent.focused) }}
+  {%- if agent.state == "running" and agent.current_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("? " ~ agent.current_tool) | dim if agent.current_tool_kind == "user_question" else ("↳ " ~ agent.current_tool) | dim }}{%- endif -%}
+  {%- if agent.state == "running" and not agent.current_tool and agent.last_tool -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("last: " ~ agent.last_tool) | dim }}{%- endif -%}
+  {%- if agent.state != "running" and agent.settled_reason -%}{{ "\n" }}{{- tree.prefix_line(0, 1, [tab_is_last, agent_is_last]) | dim }}{{ ("settled: " ~ agent.settled_reason) | dim }}{%- endif -%}
+{%- endmacro -%}
