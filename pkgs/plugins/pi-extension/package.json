@@ -1,11 +1,15 @@
 {
   "name": "@zellij-agent-threads/pi-extension",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "dependencies": {
     "typebox": "^1.2.2"
