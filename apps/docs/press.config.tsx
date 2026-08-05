@@ -3,6 +3,8 @@ import { llmsPlugin } from "fumapress/plugins/llms.txt";
 import { flexsearchPlugin } from "fumapress/plugins/flexsearch";
 import { fumadocsMdx } from "fumapress/adapters/mdx";
 import { update } from "fumadocs-core/source";
+import defaultMdxComponents, { createRelativeLink } from "fumadocs-ui/mdx";
+import { Mermaid } from "./src/components/mdx/Mermaid";
 // don't worry if this file is missing, we will run the dev command later to generate this file
 import { docs, providerDocs } from "./.source/server";
 
@@ -80,4 +82,12 @@ export default defineConfig({
   // extend via plugins
   .plugins(flexsearchPlugin(), llmsPlugin())
   // use different content sources
-  .adapters(fumadocsMdx());
+  .adapters(fumadocsMdx({
+    async getMdxComponents(page) {
+      return {
+        ...defaultMdxComponents,
+        a: createRelativeLink(await this.getLoader(), page),
+        Mermaid,
+      };
+    },
+  }));
