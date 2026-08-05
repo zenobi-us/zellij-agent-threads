@@ -1,106 +1,90 @@
 ---
 title: Why Zellij Agent Threads
-description: |
-  Why Zellij Agent Threads exists: a Zellij panel for tracking agents across panes and tabs.
+description: Why Zellij Agent Threads exists, and what problem it solves.
+category: explanation
+tags:
+  - explanation
+  - product
 ---
 
 # Why Zellij Agent Threads
 
-Zellij Agent Threads shows agents inside Zellij.
+Zellij Agent Threads shows active AI Agents inside Zellij.
 
-It gives you a sidebar or floating panel that lists agents running anywhere in the current Zellij session, across panes and tabs.
+It gives you one terminal-native panel for Agents that run across tabs, panes, and worktrees.
 
 ## The problem
 
-Agent work spreads across tabs, panes, and worktrees. After a few prompts, it gets hard to tell what is still running and where it lives.
+Agent work spreads quickly.
 
-You need one terminal-native view that answers:
+One Agent can run in a feature worktree. Another Agent can run tests in a different tab. A third Agent can sit idle after a review.
 
-- which agents are running?
-- which agents are idle?
-- which tab are they in?
-- which worktree are they using?
-- what belongs to this Zellij session?
+After a few prompts, tab names are not enough. You need to know where each Agent lives and what each Agent is doing.
+
+Zellij Agent Threads answers these questions:
+
+- Which Agents are running?
+- Which Agents are idle?
+- Which tab contains an Agent?
+- Which pane contains an Agent?
+- Which worktree does the Agent use?
+- Which Agents belong to this Zellij session?
+
+## The model
+
+A harness gives Agent state to `agent-threads`.
+
+Pi is the first supported harness. Its extension is a wrapper that turns Pi lifecycle events into `agent-threads` CLI calls.
+
+The CLI writes Agent Reports to SQLite. The Zellij plugin reads snapshots from the CLI and renders a panel.
 
 ```text
-agent in any pane or tab
-  -> Agent Report v2
-  -> Zellij panel
+Pi event
+  -> Pi extension wrapper
+  -> agent-threads upsert/delete
+  -> SQLite store
+  -> Zellij plugin snapshot
+  -> Zellij plugin panel
 ```
 
 ## The default view
 
-The default list groups agents by tab:
-
-```text
-{TabName} [count]
-  - {agentname} {status}
-    {worktreepath}
-  - {agentname} {status}
-    {worktreepath}
-```
-
-Example:
+The default panel groups Agents by Zellij tab:
 
 ```text
 frontend [2]
-  - claude running
+  - pi running
     ~/src/app/.worktrees/nav-redesign
-  - qwen idle
+  - pi idle
     ~/src/app
 
 infra [1]
-  - codex running
+  - pi running
     ~/src/ops/.worktrees/tf-cleanup
 ```
 
-## What it optimizes for
+The panel also shows pane data, model data, titles, current tools, and recent plugin events.
 
-### Current-session focus
+## What this project optimizes for
 
-By default, the panel only shows agents from the current Zellij session. The goal is not a global dashboard. It is local awareness for the workspace you are already using.
+Zellij Agent Threads optimizes for a small live overview.
 
-### Pane and tab coverage
+It is not an Agent runner. It does not start Agents. It does not replace Pi, Zellij, or your task tracker.
 
-An agent can start in any pane on any tab. The panel collects those reports and groups them into one readable list.
+It only answers one question: what is active in this Zellij session?
 
-### Worktree clarity
+## Why Zellij
 
-The worktree path matters more than process trivia. When several agents are active, the first question is usually “what code is this touching?”
+Zellij already knows the terminal layout.
 
-### Harness-neutral reporting
+It knows tabs, panes, clients, and sessions. It can host a plugin pane next to your terminals. It can focus a pane when you click an entry.
 
-The first supported harness is only the first integration. Any harness can publish agent status if it reports agent id, status, tab, pane, and worktree path.
+This makes Zellij a good place for the Agent overview.
 
-## What this is not
+## Current limits
 
-- not an orchestrator
-- not a scheduler
-- not durable history
-- not telemetry
-- not a web dashboard
+This project is in early development.
 
-It is a Zellij-native status list for agents.
+The first supported harness is Pi. Other harnesses can integrate by writing Agent Reports to the `agent-threads` CLI.
 
-## Good fit
-
-Use it when you want:
-
-- a sidebar list of agents
-- a floating “what is running?” panel
-- status from panes across all tabs
-- grouping by tab
-- worktree paths at a glance
-- current-session filtering by default
-
-## Bad fit
-
-Use something else when you need:
-
-- cross-machine tracking
-- permanent audit logs
-- metrics
-- remote control
-- workflow automation
-
-Zellij Agent Threads stays small: receive Agent Reports, group them, render a useful list.
+The template API can change while the project is young. Pin release versions when you share templates across machines.
